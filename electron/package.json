@@ -5,10 +5,14 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "start:xvfb": "bash ./launch-with-xvfb.sh",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "build:linux:appimage": "electron-builder --linux AppImage",
+    "build:linux:deb": "electron-builder --linux deb",
+    "pack:linux": "npm run build:linux && echo 'Built Linux packages in ./dist'"
   },
   "keywords": [
     "BIDS",
@@ -54,9 +58,12 @@
       "preload.js",
       "index.html",
       "app.js",
+      "launch-with-xvfb.sh",
       "bids_viewer.html",
       "assets/**/*",
       "resources/**/*",
+      "NatMEG_logo.png",
+      "CIR_logo.png",
       "../bidsify.py",
       "../default_config.yml",
       "../requirements.txt"
@@ -67,6 +74,8 @@
         "to": "resources",
         "filter": ["**/*"]
       }
+      ,
+      { "from": "..", "to": ".", "filter": ["bidsify.py", "default_config.yml", "requirements.txt"] }
     ],
     "directories": {
       "output": "dist"

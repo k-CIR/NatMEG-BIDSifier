@@ -25,9 +25,7 @@ ipcMain.handle('run-bidsify-with-args', async (event, args) => {
       // Find Python executable and bidsify.py
       const pythonExe = getPythonExecutable();
       const isDev = !app.isPackaged;
-      const bidsifyPath = isDev 
-        ? path.join(__dirname, '..', 'bidsify.py')
-        : path.join(process.resourcesPath || __dirname, 'bidsify.py');
+      const bidsifyPath = resolveBidsifyPath();
 
       // Insert the script path at the start
       const fullArgs = [bidsifyPath, ...args];
@@ -156,6 +154,31 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 }
+
+// --- X11 / headless helper ----------------------------------------------
+// Allow optional headless / Xvfb-friendly flags. These can be passed as
+// command-line arguments like `--headless` or `--disable-gpu` when launching
+// the app; they are also useful when starting the app from `xvfb-run`.
+function applyHeadlessFlagsIfRequested() {
+  const argv = process.argv.slice(1).join(' ');
+  // If user requested headless mode, apply recommended command-line switches
+  if (argv.includes('--headless') || process.env.NATMEG_HEADLESS === '1') {
+    // Suggested flags for headless servers
+    try { app.commandLine.appendSwitch('disable-gpu'); } catch (e) {}
+    try { app.commandLine.appendSwitch('disable-software-rasterizer'); } catch (e) {}
+    try { app.commandLine.appendSwitch('no-sandbox'); } catch (e) {}
+    try { app.commandLine.appendSwitch('disable-gpu-compositing'); } catch (e) {}
+    // Older Electron: prefer to explicitly disable hardware acceleration
+    try { app.disableHardwareAcceleration(); } catch (e) {}
+  }
+  // Allow explicit no-gpu option
+  if (argv.includes('--no-gpu') || process.env.NATMEG_NO_GPU === '1') {
+    try { app.commandLine.appendSwitch('disable-gpu'); } catch (e) {}
+  }
+}
+
+// Apply headless flags early before ready
+applyHeadlessFlagsIfRequested();
 
 // Handle file open dialog
 ipcMain.handle('open-file-dialog', async () => {
@@ -370,6 +393,30 @@ function getPythonExecutable() {
   }
 }
 
+// Resolve path to bidsify.py in development and production builds
+function resolveBidsifyPath() {
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    return path.join(__dirname, '..', 'bidsify.py');
+  }
+
+  // In production prefer an unpacked resource in the Resources directory
+  const resourcesPath = process.resourcesPath || path.join(__dirname, '..');
+  const candidate1 = path.join(resourcesPath, 'bidsify.py');
+  if (fsSync.existsSync(candidate1)) return candidate1;
+
+  // If packaging used ASAR and files are unpacked under app.asar.unpacked
+  const candidate2 = path.join(resourcesPath, 'app.asar.unpacked', 'bidsify.py');
+  if (fsSync.existsSync(candidate2)) return candidate2;
+
+  // Fallback: try to find file next to app bundle
+  const candidate3 = path.join(__dirname, '..', 'bidsify.py');
+  if (fsSync.existsSync(candidate3)) return candidate3;
+
+  // Last resort: return candidate1 (may not exist) and let caller handle error
+  return candidate1;
+}
+
 // Run bidsify.py with config
 ipcMain.handle('run-bidsify', async (event, config, onlyTable = false) => {
   return new Promise((resolve) => {
@@ -382,9 +429,7 @@ ipcMain.handle('run-bidsify', async (event, config, onlyTable = false) => {
         // Find Python executable and bidsify.py
         const pythonExe = getPythonExecutable();
         const isDev = !app.isPackaged;
-        const bidsifyPath = isDev 
-          ? path.join(__dirname, '..', 'bidsify.py')
-          : path.join(process.resourcesPath || __dirname, 'bidsify.py');
+        const bidsifyPath = resolveBidsifyPath();
         
         // Build command arguments
         const args = [bidsifyPath, '--config', tempConfigPath];

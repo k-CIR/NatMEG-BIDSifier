@@ -1,0 +1,9 @@
+# Dockerfile to build a Linux AppImage and deb using electron-builder
+# This image installs native deps required for electron-builder and runs build in /workspace
+# DISABLED: This Dockerfile was intentionally disabled per maintainer request.
+# Please use native build steps on Linux (see README) instead.
+
+LABEL maintainer="NatMEG"
+
+## NOTE: If you need a reproducible container-based build, recreate this file
+## with a proper `FROM` clause and `electronuserland/builder` base image.
