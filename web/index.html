@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NatMEG-BIDSifier — Web UI</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; background:#f6f6f6 }
+      .container { max-width: 1100px; margin: 0 auto; background: #ffffff; padding: 18px; border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,0.06) }
+      textarea { width: 100%; min-height: 240px; font-family: monospace }
+      .row { display:flex; gap:12px; margin-top:12px; align-items:center }
+      .btn { padding:8px 12px; border-radius:6px; border: none; cursor: pointer }
+      .btn.primary { background: #860052; color:white }
+      .btn.warn { background: #ff9800; color: white }
+      pre { background:#111; color:#eee; padding:12px; border-radius:6px; overflow:auto; max-height: 320px }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>NatMEG-BIDSifier — Web UI</h1>
+      <p>Paste a YAML config below or upload a YAML file, then click <strong>Analyse</strong>, <strong>Run</strong> or <strong>Report</strong>.</p>
+
+      <div>
+        <input type="file" id="fileInput" accept=".yml,.yaml" />
+      </div>
+
+      <textarea id="configText" placeholder="Paste your YAML config here (or upload file)"></textarea>
+
+      <div class="row">
+        <button id="analyzeBtn" class="btn primary">Analyse</button>
+        <button id="runBtn" class="btn warn">Run conversion</button>
+        <button id="reportBtn" class="btn">Create report</button>
+        <div style="flex:1"></div>
+        <div id="status"></div>
+      </div>
+
+      <h3>Output</h3>
+      <pre id="output">—</pre>
+
+      <div id="artifacts" style="margin-top:12px"></div>
+
+      <div id="tableEditor" style="display:none; margin-top:16px;">
+        <h3>Conversion Table Editor</h3>
+        <div style="margin-bottom:8px; display:flex; gap:8px; align-items:center;">
+          <button id="downloadTable" class="btn primary">Download TSV</button>
+          <button id="closeEditor" class="btn">Close editor</button>
+        </div>
+        <div id="tableContainer" style="overflow:auto; border:1px solid #eee; max-height:360px"></div>
+      </div>
+    </div>
+
+    <script>
+      const fileInput = document.getElementById('fileInput');
+      const configText = document.getElementById('configText');
+      const status = document.getElementById('status');
+      const output = document.getElementById('output');
+
+      fileInput.addEventListener('change', async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const text = await f.text();
+        configText.value = text;
+      });
+
+      async function createJob(action) {
+        status.textContent = 'Queued…';
+        output.textContent = '';
+        try {
+          const res = await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config_yaml: configText.value, action })
+          });
+          const json = await res.json();
+          if (!json.job_id) throw new Error('No job_id returned');
+          const jobId = json.job_id;
+          status.textContent = `Running (job ${jobId})`;
+
+          // open websocket to stream logs
+          const ws = new WebSocket(`${location.origin.replace('http', 'ws')}/ws/jobs/${jobId}/logs`);
+          ws.onopen = () => {
+            console.log('WS open', jobId);
+          };
+          ws.onmessage = async (ev) => {
+            output.textContent += ev.data;
+            output.scrollTop = output.scrollHeight;
+            if (typeof ev.data === 'string' && ev.data.startsWith('__JOB_DONE__')) {
+              status.textContent = 'Completed';
+              // query artifacts for this job and display download links
+              try {
+                const resp = await fetch(`/api/jobs/${jobId}/artifacts`);
+                const j = await resp.json();
+                if (j.artifacts && j.artifacts.length > 0) {
+                  output.textContent += '\n\nArtifacts:\n';
+                  const artifactsDiv = document.getElementById('artifacts');
+                  artifactsDiv.innerHTML = '';
+                  j.artifacts.forEach((p, i) => {
+                    const link = `${location.origin}/api/jobs/${jobId}/artifact?index=${i}`;
+                    output.textContent += `${i}: ${p} -> ${link}\n`;
+                    const el = document.createElement('div');
+                    el.innerHTML = `Artifact ${i}: <a href="${link}" target="_blank">${p}</a>` + (p.toLowerCase().endsWith('.tsv') ? ` <button class="btn" onclick="loadArtifact('${jobId}', ${i})">Open in editor</button>` : '');
+                    artifactsDiv.appendChild(el);
+                  });
+                }
+              } catch (err) {
+                console.warn('Failed to fetch artifacts', err);
+              }
+
+              ws.close();
+            }
+          };
+          ws.onclose = () => console.log('WS closed');
+          ws.onerror = (e) => console.error('WS error', e);
+
+        } catch (err) {
+          output.textContent = String(err);
+          status.textContent = 'ERROR';
+        }
+      }
+
+      document.getElementById('analyzeBtn').addEventListener('click', () => createJob('analyse'));
+      document.getElementById('runBtn').addEventListener('click', () => createJob('run'));
+      document.getElementById('reportBtn').addEventListener('click', () => createJob('report'));
+
+      // Table editor helpers
+      let currentEditorData = null;
+
+      async function loadArtifact(jobId, index) {
+        try {
+          const resp = await fetch(`/api/jobs/${jobId}/artifact?index=${index}`);
+          if (!resp.ok) throw new Error('Failed to download artifact');
+          const text = await resp.text();
+          openTableEditor(text, `${jobId}-artifact-${index}.tsv`);
+        } catch (err) {
+          alert('Error loading artifact: ' + err.message);
+        }
+      }
+
+      function openTableEditor(tsvText, filename = 'conversion.tsv') {
+        const editor = document.getElementById('tableEditor');
+        const container = document.getElementById('tableContainer');
+        editor.style.display = 'block';
+        // parse TSV
+        const lines = tsvText.trim().split('\n');
+        const headers = lines[0].split('\t');
+        const rows = lines.slice(1).map(line => line.split('\t'));
+        // build table
+        let html = '<table style="width:100%; border-collapse: collapse; font-size:12px;">';
+        html += '<thead><tr>' + headers.map(h => `<th style="border:1px solid #eee; padding:6px; background:#fafafa">${h}</th>`).join('') + '</tr></thead>';
+        html += '<tbody>' + rows.map((r, ri) => `<tr data-row="${ri}">` + r.map((cell, ci) => `<td style="border:1px solid #eee; padding:6px"><input style="width:100%; border:none;" data-row="${ri}" data-col="${ci}" value="${escapeHtml(cell)}"></td>`).join('') + '</tr>`).join('') + '</tbody>';
+        html += '</table>';
+        container.innerHTML = html;
+        currentEditorData = { headers, rows, filename };
+        document.getElementById('downloadTable').onclick = downloadEditedTable;
+        document.getElementById('closeEditor').onclick = () => { document.getElementById('tableEditor').style.display = 'none'; };
+      }
+
+      function escapeHtml(str){ return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      function downloadEditedTable(){
+        // reconstruct TSV
+        const container = document.getElementById('tableContainer');
+        if (!currentEditorData) return;
+        const inputs = container.querySelectorAll('input[data-row][data-col]');
+        const rows = [];
+        const maxRow = Math.max(...Array.from(inputs).map(i => parseInt(i.dataset.row)));
+        const maxCol = Math.max(...Array.from(inputs).map(i => parseInt(i.dataset.col)));
+        // Build matrix
+        const matrix = Array.from({length: maxRow+1}, () => Array(maxCol+1).fill(''));
+        inputs.forEach(inp => { matrix[parseInt(inp.dataset.row)][parseInt(inp.dataset.col)] = inp.value; });
+        const lines = [currentEditorData.headers.join('\t')].concat(matrix.map(r => r.join('\t')));
+        const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = currentEditorData.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    </script>
+  </body>
+</html>

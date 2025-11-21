@@ -177,3 +177,56 @@ WantedBy=multi-user.target
  - Packaging failures often relate to missing dependencies (GTK libraries) in the build environment; ensure your build host has the required libraries installed.
 
 If you'd like help creating a reproducible build environment without Docker (for example, a VM image or a script that installs native build dependencies), tell me which distribution you plan to use and I’ll provide tailored steps. You can also use the included `packaging/install_deps_ubuntu.sh` script to quickly provision a Ubuntu host.
+
+---
+
+## Option A: Run as a web server (FastAPI) — the "server" path
+
+If you prefer to run the app on a remote server and use a browser instead of Electron, a minimal FastAPI server is included in `server/app.py` plus a tiny static front-end in `web/`.
+
+Install dependencies (create venv recommended):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r server/requirements.txt
+```
+
+Run the server:
+
+```bash
+uvicorn server.app:app --host 0.0.0.0 --port 8080
+```
+
+Then point your browser to http://<server-ip>:8080/ and the small web UI will let you paste a YAML config and run `Analyse`, `Run conversion` or `Create report` — the server writes a temporary YAML and executes `bidsify.py` on the host.
+
+Security note: This minimal server is intended for internal / trusted networks. Add TLS and authentication for public deployments.
+
+### Real-time logs and async jobs
+
+The server supports asynchronous jobs and real-time log streaming:
+
+- POST /api/jobs with JSON { "config_yaml": "...", "action": "analyse|run|report" } returns a job_id
+- Connect a WebSocket to ws://<host>/ws/jobs/{job_id}/logs to stream stdout/stderr as the job runs
+
+The web UI uses this mechanism so you can watch conversions live in the browser.
+
+Example using curl / WebSocket (quick):
+
+1. Submit a job:
+
+```bash
+curl -s -X POST http://localhost:8080/api/jobs \
+	-H 'Content-Type: application/json' \
+	-d '{"config_yaml":"<your YAML here>","action":"run"}'
+```
+
+2. You will receive a job_id (UUID). Stream logs with a websocket client to ws://localhost:8080/ws/jobs/<job_id>/logs
+
+3. After the job finishes, fetch any discovered artifacts:
+
+```bash
+curl http://localhost:8080/api/jobs/<job_id>/artifacts
+```
+
+The web UI already wraps these endpoints and provides a conversion-table editor for TSV artifacts.
