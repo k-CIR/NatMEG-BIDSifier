@@ -1,3 +1,0 @@
-This file has been disabled per repository maintainer request. Docker builds are not part of this project.
-
-To re-enable, rename to Dockerfile.build and use a builder image such as electronuserland/builder.
