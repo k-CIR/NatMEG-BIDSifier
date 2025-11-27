@@ -24,8 +24,12 @@ if ! command -v websockify >/dev/null 2>&1; then
   echo "websockify not found. You may need to 'apt install websockify' or install novnc from source." >&2
 fi
 
-echo "Installing project npm deps for electron"
-cd electron
-npm ci
+if [ -d "$(pwd)/electron" ]; then
+  echo "Installing project npm deps for electron"
+  cd electron
+  npm ci
+else
+  echo "Electron project not present in this branch. Switch to 'feature/electron-app' to install electron packaging dependencies." >&2
+fi
 
-echo "Done. You can run the GUI with: bash ./launch-with-xvfb.sh or use ./start-novnc.sh for web access."
+echo "Done. If you need to run GUI packaging scripts, switch to the 'feature/electron-app' branch which contains the electron project and packaging artifacts."

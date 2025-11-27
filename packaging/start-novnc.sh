@@ -40,11 +40,17 @@ WEBSOCKIFY_PID=$!
 
 sleep 0.5
 
-echo "Starting NatMEG-BIDSifier"
-cd $(dirname "$0")/../electron || cd electron
-npm run start -- --headless &
-APP_PID=$!
-
-echo "Started processes: Xvfb=$XVFB_PID x11vnc=$X11VNC_PID websockify=$WEBSOCKIFY_PID app=$APP_PID"
-
-wait $APP_PID || exit $?
+if [ -d "$(dirname \"$0\")/../electron" ]; then
+  echo "Starting NatMEG-BIDSifier"
+  cd $(dirname "$0")/../electron || cd electron
+  npm run start -- --headless &
+  APP_PID=$!
+  echo "Started processes: Xvfb=$XVFB_PID x11vnc=$X11VNC_PID websockify=$WEBSOCKIFY_PID app=$APP_PID"
+  wait $APP_PID || exit $?
+else
+  echo "Electron project not present in this branch. Switch to 'feature/electron-app' to run the desktop GUI or re-add electron/ to this branch." >&2
+  echo "Started processes: Xvfb=$XVFB_PID x11vnc=$X11VNC_PID websockify=$WEBSOCKIFY_PID"
+  # keep container alive to allow inspection, but do not attempt to launch the app
+  wait $XVFB_PID $X11VNC_PID $WEBSOCKIFY_PID || true
+fi
+ 

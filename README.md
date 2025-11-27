@@ -1,6 +1,6 @@
 # NatMEG-BIDSifier
 
-A desktop application for converting MEG/EEG data to BIDS (Brain Imaging Data Structure) format, developed for the NatMEG facility at Karolinska Institutet.
+A toolkit for converting MEG/EEG data to BIDS (Brain Imaging Data Structure) format, developed for the NatMEG facility at Karolinska Institutet. The project supports a CLI and a web UI; an Electron desktop app historically existed but has been moved to a separate branch to keep this branch lightweight.
 
 ## Overview
 
@@ -21,7 +21,7 @@ NatMEG-BIDSifier provides both a command-line interface and an Electron-based GU
 ### Prerequisites
 
 - Python 3.10 or higher
-- Node.js 16 or higher (for Electron app)
+    <!-- Electron packaging moved to `feature/electron-app` branch -->
 - Git
 
 ### Setup
@@ -54,12 +54,9 @@ python bidsify.py --config config.yml [--analyse]
 
 ### Desktop Application
 
-```bash
-cd electron
-npm start
-```
+The Electron-based desktop app has been moved out of this branch to keep the main branch small and focused on the command-line and web interfaces.
 
-Note: to reduce repository size, large Electron build artifacts (packaged distributions, node_modules and bundled Python virtualenv) have been removed from this branch. The Electron source and build scripts remain in `electron/`. If you need the full packaged app, see the `feature/electron-app` branch or regenerate artifacts locally using the packaging instructions.
+If you still need the full Electron sources and build artifacts, use the `feature/electron-app` branch which contains the Electron project and packaging scripts. This branch keeps the main repo small and avoids checking in large binary artifacts.
 
 ## Configuration
 
@@ -78,7 +75,7 @@ output_directory: "/path/to/output"
 ├── bidsify.py              # Main conversion script
 ├── requirements.txt        # Python dependencies
 ├── default_config.yml      # Default configuration
-└── electron/              # Desktop application
+└── electron/              # (moved to feature/electron-app branch)
     ├── main.js            # Electron main process
     ├── renderer.js        # UI logic
     ├── package.json       # Node.js dependencies

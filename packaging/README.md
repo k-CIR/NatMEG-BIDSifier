@@ -1,6 +1,6 @@
 # Packaging and X11 (Linux)
 
-This document explains how to run the Electron GUI on headless Linux hosts using Xvfb and how to build Linux installers (.AppImage/.deb) using `electron-builder`.
+This document explained how to run and build the Electron GUI. The Electron app and packaging artifacts have been moved to the separate `feature/electron-app` branch to keep the main branch small. If you need to build or run the desktop application, switch to that branch for the full packaging instructions and scripts.
 
 ## Run on a headless server (Xvfb)
 
@@ -10,12 +10,9 @@ Install Xvfb (Ubuntu/Debian):
 sudo apt update && sudo apt install -y xvfb
 ```
 
-Use the included helper to run the app under Xvfb:
+Use the included helper to run the app under Xvfb in the `feature/electron-app` branch.
 
-```bash
-cd electron
-bash ./launch-with-xvfb.sh
-```
+When working from this branch (packaging moved), switch to `feature/electron-app` and follow the Electron-specific instructions there.
 
 The wrapper uses `xvfb-run` to create a temporary virtual X server and then runs `npm run start` inside it.
 
@@ -47,14 +44,7 @@ NATMEG_HEADLESS=1 npm start
 
 ## Build Linux packages
 
-Electron packaging is handled by `electron-builder`. The `package.json` includes convenient scripts:
-
-- Build both AppImage and deb: `npm run build:linux`
-- Build only AppImage: `npm run build:linux:appimage`
-- Build only deb: `npm run build:linux:deb`
-- Convenience build script: `npm run pack:linux` (runs `build:linux` and prints the output path)
-
-Build prerequisites:
+Electron packaging is supported in the `feature/electron-app` branch. That branch contains `electron/package.json`, packaging helpers, and CI for building AppImage and `.deb` artifacts using `electron-builder`. See that branch for build scripts and CI example.
 
 - Node 18+ / npm
 - libgtk and other desktop dependencies (for headless container builds you may need to install extra libraries)
@@ -65,14 +55,12 @@ On Ubuntu/Debian you'll commonly need:
 sudo apt install -y libgtk-3-0 libnotify4 libnss3 libxss1 libasound2 libxtst6 libx11-6
 ```
 
-The built artifacts will be in `electron/dist/`.
+The built artifacts will be in `electron/dist/` on the packaging branch.
 
 Note: the build now bundles `bidsify.py`, `default_config.yml` and `requirements.txt` into the app resources so the GUI can execute the Python backend in packaged apps. The NatMEG/CIR logos are also included so `index.html` logos are available in the macOS and Linux builds.
-### GitHub Actions example (builds AppImage + deb without Docker)
+### CI / GitHub Actions
 
-Add the `.github/workflows/build-linux.yml` workflow to automatically build both AppImage and `.deb` packages on each push to `main` or pull request. The workflow runs on `ubuntu-latest` and uses `actions/setup-node@v4` with Node 18.
-
-Artifacts built by the workflow are stored in `electron/dist` and uploaded into the workflow run artifacts (downloadable from the Actions UI).
+Electron packaging CI was removed from this branch to keep the default workflow focused on the web/CLI path. CI for electron builds lives on the `feature/electron-app` branch; if you want packaging artifacts in CI, run that workflow from the packaging branch.
 
 ### noVNC + Systemd
 
@@ -230,3 +218,10 @@ curl http://localhost:8080/api/jobs/<job_id>/artifacts
 ```
 
 The web UI already wraps these endpoints and provides a conversion-table editor for TSV artifacts.
+
+File operations
+- You can load and save files on the server via the web UI. The endpoints used are:
+	- POST /api/read-file { path }
+	- POST /api/save-file { path, content }
+
+	Use with care: the server currently allows reading/writing files relative to the project root. In production add authentication and path restrictions.
