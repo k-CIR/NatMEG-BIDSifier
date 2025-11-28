@@ -4,179 +4,437 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>NatMEG-BIDSifier — Web UI</title>
-    <style>
-      body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; background:#f6f6f6 }
-      .container { max-width: 1100px; margin: 0 auto; background: #ffffff; padding: 18px; border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,0.06) }
-      textarea { width: 100%; min-height: 240px; font-family: monospace }
-      .row { display:flex; gap:12px; margin-top:12px; align-items:center }
-      .btn { padding:8px 12px; border-radius:6px; border: none; cursor: pointer }
-      .btn.primary { background: #860052; color:white }
-      .btn.warn { background: #ff9800; color: white }
-      pre { background:#111; color:#eee; padding:12px; border-radius:6px; overflow:auto; max-height: 320px }
-    </style>
+    <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <div class="container">
-      <h1>NatMEG-BIDSifier — Web UI</h1>
-      <p>Paste a YAML config below or upload a YAML file, then click <strong>Analyse</strong>, <strong>Run</strong> or <strong>Report</strong>.</p>
-
-      <div>
-        <input type="file" id="fileInput" accept=".yml,.yaml" />
-      </div>
-
-      <textarea id="configText" placeholder="Paste your YAML config here (or upload file)"></textarea>
-
-      <div class="row">
-        <button id="analyzeBtn" class="btn primary">Analyse</button>
-        <button id="runBtn" class="btn warn">Run conversion</button>
-        <button id="reportBtn" class="btn">Create report</button>
-        <div style="flex:1"></div>
-        <div id="status"></div>
-      </div>
-
-      <h3>Output</h3>
-      <pre id="output">—</pre>
-
-      <div id="artifacts" style="margin-top:12px"></div>
-
-      <div id="tableEditor" style="display:none; margin-top:16px;">
-        <h3>Conversion Table Editor</h3>
-        <div style="margin-bottom:8px; display:flex; gap:8px; align-items:center;">
-          <button id="downloadTable" class="btn primary">Download TSV</button>
-          <button id="closeEditor" class="btn">Close editor</button>
+    <div class="app-container">
+      <aside class="sidebar">
+        <div class="app-title">NatMEG-BIDSifier</div>
+        <div class="brand-logos">
+          <img src="/NatMEG_logo.png" alt="NatMEG" />
+          <img src="/CIR_logo.png" alt="CIR" />
         </div>
-        <div id="tableContainer" style="overflow:auto; border:1px solid #eee; max-height:360px"></div>
+        <div class="nav-items">
+          <div class="nav-section">
+            <div class="nav-item active" data-view="main-config" data-step="1">
+              <span class="step-number">1</span>
+              <span class="step-label">Configuration</span>
+            </div>
+            <div class="nav-item" data-view="main-editor" data-step="2">
+              <span class="step-number">2</span>
+              <span class="step-label">Analyse / Editor</span>
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <div class="nav-item" data-view="main-execute" data-step="3">
+              <span class="step-number">3</span>
+              <span class="step-label">Execute</span>
+            </div>
+          </div>
+          <!-- Hiding repor for now -->
+          <!-- <div class="nav-section">
+            <div class="nav-item" data-view="main-report" data-step="4">
+              <span class="step-number">4</span>
+              <span class="step-label">Report</span>
+            </div>
+          </div> -->
+        </div>
+        <div class="sidebar-footer">
+          <a class="github-link" href="https://github.com/k-CIR/NatMEG-BIDSifier" target="_blank">GitHub</a>
+        </div>
+      </aside>
+      <main class="main-content">
+      <div class="container">
+      <!-- small badge to help debugging which view is active -->
+      <div id="activeViewBadge" class="active-view-badge">view: main-config</div>
+      <div class="header-bar">
+        <div>
+          <h1>NatMEG-BIDSifier — Web UI</h1>
+          <div class="subtitle">Edit your config, preview conversion tables and run conversions — lightweight web interface for the server.</div>
+        </div>
+        <div class="header-actions">
+          <small class="muted">Mode: <strong>Web</strong></small>
+        </div>
+      </div>
+
+      <!-- upload controls visible only on the Configuration view (moved into main-config) -->
+
+      <div id="main-config" class="main-view">
+        <h3>Configuration</h3>
+
+        <div class="file-row" style="display:flex; gap:16px; align-items:flex-start; margin-top:12px; flex-direction:column;">
+          <!-- Server section spans both columns -->
+          <div class="form-section" style="width:100%; margin-bottom:14px;">
+            <input type="file" id="fileInput" accept=".yml,.yaml" style="display:none" aria-hidden="true" />
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+              <div style="font-weight:700">Server</div>
+              <small class="hint">Leave blank for local server</small>
+            </div>
+            <div class="form-group" style="margin-bottom:10px;">
+              <label>SSH Server (optional)</label>
+              <input id="config_ssh_server" placeholder="user@host (optional)" class="input-wide-compact">
+            </div>
+            <div class="form-group">
+              <label>Server config path</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input id="loadConfigPath" placeholder="server path to load" class="input-wide-compact" style="flex:1">
+                <button id="loadConfigBtn" class="btn">Load</button>
+                <button id="saveConfigBtn" class="btn primary" disabled>💾 Save</button>
+                <div id="configSaveState" class="muted" style="margin-left:6px">saved</div>
+                <!-- <button id="reloadConfigBtn" class="btn">Reload</button> -->
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:16px; align-items:flex-start; width:100%">
+          <!-- Left column: form fields -->
+          <div style="flex:1 1 420px;">
+
+            <div class="form-section">
+              <h4>Project settings</h4>
+              <small class="hint">Basic project identification and tasks used to generate conversion mappings.</small>
+              <div style="display:grid; gap:8px; grid-template-columns: 1fr 1fr; align-items:start; margin-top:8px;">
+                <div>
+                  <label>Project Name</label>
+                  <input id="config_project_name" class="input-text" placeholder="My Study">
+                </div>
+                <div>
+                  <label>CIR ID</label>
+                  <input id="config_cir_id" class="input-text" placeholder="Optional CIR identifier">
+                </div>
+                <div style="grid-column: 1 / -1">
+                  <label>Tasks <small style="color: var(--muted); font-weight:400">(comma-separated)</small></label>
+                  <input id="config_tasks" class="input-text" placeholder="TaskA, TaskB">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <h4>Paths</h4>
+              <small class="hint">Filesystem locations used by the conversion (root, raw data and outputs).</small>
+              <div class="form-group">
+                <label>Root Path</label>
+                <div style="display:flex; gap:8px;"><input id="config_root_path" class="input-wide-compact"></div>
+              </div>
+              <div class="form-group">
+                <label>Raw Data Path</label>
+                <div style="display:flex; gap:8px;"><input id="config_raw_path" class="input-wide-compact"></div>
+              </div>
+              <div class="form-group">
+                <label>BIDS Output Path</label>
+                <div style="display:flex; gap:8px;"><input id="config_bids_path" class="input-wide-compact"></div>
+              </div>
+
+              <div style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
+                <div class="form-group">
+                  <label>Calibration file</label>
+                  <div style="display:flex; gap:8px;"><input id="config_calibration_path" class="input-text"></div>
+                </div>
+                <div class="form-group">
+                  <label>Crosstalk file</label>
+                  <div style="display:flex; gap:8px;"><input id="config_crosstalk_path" class="input-text"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <h4>Conversion settings</h4>
+              <small class="hint">Conversion table and small options that affect how conversion runs.</small>
+              <div style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:220px">
+                  <div class="form-group">
+                    <label>Conversion Table File</label>
+                    <input id="config_conversion_file" class="input-text" value="bids_conversion.tsv">
+                  </div>
+                
+                  <div class="form-group">
+                    <label>Overwrite existing</label>
+                      <select id="config_overwrite" class="input-wide-compact">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                      </select>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            </div>
+          
+
+          <!-- Right column: YAML editor + dataset metadata (save controls are part of server section above) -->
+          <div class="form-section" style="flex:1 1 520px; display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <div style="flex:1 1 260px; display:flex; gap:8px; align-items:center;">
+                <div style="flex:1">
+                  <h4>BIDS dataset metadata</h4>
+                  <small class="hint">Information used in dataset_description and metadata fields.</small>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <input id="config_dataset_description_file" class="input-wide-compact" value="dataset_description.json" style="width:260px">
+                  <button id="saveDatasetDescBtn" class="btn" title="Save dataset_description.json">Save JSON</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:8px; align-items:center;">
+              <div class="form-group">
+                <label>Dataset Name</label>
+                <input id="config_dataset_name" class="input-text" placeholder="My MEG Study">
+              </div>
+              <div class="form-group">
+                <label>BIDS Version</label>
+                <input id="config_bids_version" class="input-text" value="1.7.0">
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <div class="form-group">
+                <label>Dataset type</label>
+                <select id="config_dataset_type" class="input-wide-compact">
+                  <option value="raw">raw</option>
+                  <option value="derivative">derivative</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>License</label>
+                <input id="config_license" class="input-text" placeholder="CC0, CC-BY-4.0">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Authors (comma-separated)</label>
+              <input id="config_authors" class="input-text" placeholder="Jane Doe, John Smith">
+            </div>
+              <!-- YAML editor removed: configuration loads directly into the form fields -->
+
+            <div class="form-group">
+              <label>Acknowledgements</label>
+              <textarea id="config_acknowledgements" class="input-text" placeholder="Acknowledgements..." rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <label>How to Acknowledge</label>
+              <textarea id="config_how_to_acknowledge" class="input-text" placeholder="Please cite..." rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Funding (comma-separated)</label>
+              <input id="config_funding" class="input-text" placeholder="Grant 123456, Foundation XYZ">
+            </div>
+            <div class="form-group">
+              <label>Ethics Approvals (comma-separated)</label>
+              <input id="config_ethics_approvals" class="input-text" placeholder="IRB-2024-001">
+            </div>
+            <div class="form-group">
+              <label>References and Links (comma-separated URLs)</label>
+              <input id="config_references_links" class="input-text" placeholder="https://example.com/study">
+            </div>
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              <div class="form-group">
+                <label>Dataset DOI</label>
+                <input id="config_dataset_doi" class="input-text" placeholder="doi:10.1234/example">
+              </div>
+              <div class="form-group">
+                <label>Code URL</label>
+                <input id="config_code_url" class="input-text" value="https://mne.tools/mne-bids/">
+              </div>
+            </div>
+
+              
+          </div>
+          
+        </div>
+      </div>
+      </div>
+
+      <!-- EDITOR -->
+      <div id="main-editor" class="main-view view-hidden">
+        <div id="tableEditor" style="margin-top:0;">
+          <h3>Conversion Table Editor</h3>
+
+          <!-- Editor action row: Analyze (primary), download, close, load, reload, save -->
+          <div style="margin-bottom:10px; display:flex; gap:8px; align-items:center; flex-wrap:nowrap;">
+            <!-- desired order: Analyse, Load Table, path input, Save Changes -->
+            <button id="analyzeBtn" class="btn primary">Analyse</button>
+            <button id="loadTableBtn" class="btn">Load</button>
+            <!-- path to the currently loaded conversion table (editable) -->
+              <!-- flexible path input group: grows to take the available horizontal space -->
+              <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:0;">
+                <input id="saveTablePath" class="input-text" placeholder="Path to table (edit to save as...)" style="min-width:0; width:100%;">
+                <button id="reloadEditorBtn" class="btn btn-icon" disabled title="Reload table" aria-label="Reload">
+                  <!-- Inline compact SVG glyph (monochrome, uses currentColor) -->
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                    <path d="M12 6V2L8 6l4 4V8c2.76 0 5 2.24 5 5 0 1.03-.31 1.99-.84 2.79l1.46 1.46C18.68 15.1 19 13.59 19 12c0-3.87-3.13-7-7-7zM6.84 7.21C6.32 8.01 6 8.97 6 10c0 3.87 3.13 7 7 7v4l4-4-4-4v3c-2.76 0-5-2.24-5-5 0-1.03.31-1.99.84-2.79z" />
+                  </svg>
+                </button>
+              </div>
+            <button id="saveTableServer" class="btn primary" disabled>💾 Save</button>
+            <!-- keep reload available but out of the primary inline order -->
+            
+          </div>
+
+          <!-- Search / summary / batch actions -->
+          <div style="display:flex; gap:10px; align-items:center; margin-bottom:8px;">
+            <div id="batchActionsDiv" style="display:none; gap:10px; align-items:center;">
+              <div id="selectedCount">0 rows selected</div>
+              <select id="batchStatusSelect" class="input-sm">
+                <option value="">-- Change Status --</option>
+                <option value="run">run</option>
+                <option value="check">check</option>
+                <option value="processed">processed</option>
+                <option value="skip">skip</option>
+              </select>
+              <button id="applyBatchStatusBtn" class="btn" disabled>Apply to Selected</button>
+            </div>
+            <div class="flex-1"></div>
+              <input id="editorSearchInput" placeholder="🔍 Search all fields..." class="input-wide-compact" style="min-width:260px">
+              <!-- hidden file picker for loading a local TSV into the editor -->
+              <input id="loadTableInput" type="file" accept=".tsv,.txt" style="display:none" aria-hidden="true">
+              <select id="subjectFilterSelect" class="input-sm" aria-label="Filter subjects" style="min-width:120px;">
+                <option value="">All Subjects</option>
+              </select>
+              <select id="sessionFilterSelect" class="input-sm" aria-label="Filter sessions" style="min-width:120px;">
+                <option value="">All Sessions</option>
+              </select>
+              <select id="taskFilterSelect" class="input-sm" aria-label="Filter tasks" style="min-width:160px;">
+                <option value="">All Tasks</option>
+              </select>
+              <select id="acquisitionFilterSelect" class="input-sm" aria-label="Filter acquisition" style="min-width:120px;">
+                <option value="">All Acquisitions</option>
+              </select>
+              <!-- <div id="editorRowCount" class="muted">No data loaded</div> -->
+          </div>
+
+          <div id="tableContainer" style="overflow:auto; border:1px solid #eee; max-height:360px"></div>
+          <div>
+            <small class="hint">❗ Only first split of split files are shown in the table</small>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <h3 style="margin-top:0">Output</h3>
+          <div style="display:flex; justify-content:space-between; gap:8px; align-items:center">
+            <div id="editorProgressContainer" class="progress-container" style="flex:1">
+            <div class="progress">
+              <div id="editorProgressBar" class="bar"></div>
+            </div>
+            <div id="editorProgressText" class="muted" style="margin-top:6px">Idle</div>
+            </div>
+            <div style="margin-left:8px">
+              <button id="editorStopBtn" class="btn warn" disabled>■ Stop</button>
+            </div>
+          </div>
+          <pre id="output" class="console-output small">—</pre>
+          <div id="artifacts" class="artifacts" style="margin-top:12px"></div>
+        </div>
+        
+        </div>
+      </div>
+
+      <!-- action-row moved into Execute view so Editor remains focused on editing -->
+
+      <div id="main-execute" class="main-view view-hidden">
+        <h3>Execute</h3>
+        <div style="display:flex; gap:10px; align-items:center; margin-top:8px;">
+          <button id="runBtn" class="btn primary">▶ Run</button>
+        <div class="flex-1"></div>
+        <div id="status" class="muted">Ready</div>
+      </div>
+
+        <div class="card" style="margin-top:14px">
+          <h3 style="margin-top:0">Output</h3>
+          <div style="display:flex; justify-content:space-between; gap:8px; align-items:center">
+            <div id="executeProgressContainer" class="progress-container" style="flex:1">
+            <div class="progress">
+              <div id="executeProgressBar" class="bar"></div>
+            </div>
+            <div id="executeProgressText" class="muted" style="margin-top:6px">Idle</div>
+            </div>
+            <div style="margin-left:8px">
+              <button id="executeStopBtn" class="btn warn" disabled>■ Stop</button>
+            </div>
+          </div>
+          <pre id="output" class="console-output small">—</pre>
+          <div id="artifacts" class="artifacts" style="margin-top:12px"></div>
+        </div>
+        <!-- <div id="artifacts" style="margin-top:12px"></div> -->
+      </div>
+
+      <div id="main-report" class="main-view view-hidden">
+        <h3>Report</h3>
+        <div style="display:flex; gap:10px; align-items:center; margin-top:8px;"></div>
+          <button id="reportBtn" class="btn">📊 Report</button>
+          <button id="loadReportBtn" class="btn" title="Probe for bids_results.json and populate the Report view">🔄 Load report</button>
+
+        <div class="flex-1"></div>
+        
+        <div class="card" style="margin-top:14px">
+          <div style="display:flex; justify-content:space-between; gap:8px; align-items:center">
+            <div id="reportProgressContainer" class="progress-container" style="flex:1">
+              <div class="progress">
+                <div id="reportProgressBar" class="bar"></div>
+              </div>
+              <div id="reportProgressText" class="muted" style="margin-top:6px">Idle</div>
+            </div>
+            <div style="margin-left:8px">
+              <button id="reportStopBtn" class="btn warn" disabled>■ Stop</button>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:12px; margin-top:12px; align-items:flex-start;">
+            <div style="flex: 1 1 360px; min-width:320px;">
+              <h4>Summary</h4>
+              <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;">
+                <div style="padding:10px; border-radius:6px; border:1px solid #eee; text-align:center;">
+                  <div style="font-size:22px; font-weight:700" id="stat-subjects">0</div>
+                  <div style="color:#666; font-size:12px">Subjects</div>
+                </div>
+                <div style="padding:10px; border-radius:6px; border:1px solid #eee; text-align:center;">
+                  <div style="font-size:22px; font-weight:700" id="stat-sessions">0</div>
+                  <div style="color:#666; font-size:12px">Sessions</div>
+                </div>
+                <div style="padding:10px; border-radius:6px; border:1px solid #eee; text-align:center;">
+                  <div style="font-size:22px; font-weight:700" id="stat-tasks">0</div>
+                  <div style="color:#666; font-size:12px">Tasks processed</div>
+                </div>
+              </div>
+
+              <h4 style="margin-top:12px">BIDS tree</h4>
+              <div id="reportTree" style="border:1px solid #eee; padding:8px; border-radius:6px; max-height:380px; overflow:auto; background:#fafafa">No BIDS results yet</div>
+            </div>
+
+            <div style="flex: 1 1 420px; min-width:360px;">
+              <h4>Console</h4>
+              <pre id="reportOutput" class="console-output small">—</pre>
+
+              <h4 style="margin-top:12px">Report View</h4>
+              <div id="reportArea">No report yet — run Analyse or Report to generate output</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- tableEditor moved into main-editor above -->
+      </div>
+    </main>
+    </div>
+    </div>
+    <!-- Save As modal (hidden by default) -->
+    <div id="saveAsModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="saveAsTitle">
+        <h3 id="saveAsTitle">Save configuration</h3>
+        <p class="hint">Choose a path to save the config. To keep the current file, leave as-is; to create a new file, edit the path.</p>
+        <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+          <input id="saveAsInput" class="input-wide-compact" placeholder="configs/myconfig.yml" />
+        </div>
+        <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
+          <button id="saveAsCancel" class="btn">Cancel</button>
+          <button id="saveAsConfirm" class="btn primary">Save</button>
+        </div>
       </div>
     </div>
 
-    <script>
-      const fileInput = document.getElementById('fileInput');
-      const configText = document.getElementById('configText');
-      const status = document.getElementById('status');
-      const output = document.getElementById('output');
-
-      fileInput.addEventListener('change', async (e) => {
-        const f = e.target.files[0];
-        if (!f) return;
-        const text = await f.text();
-        configText.value = text;
-      });
-
-      async function createJob(action) {
-        status.textContent = 'Queued…';
-        output.textContent = '';
-        try {
-          const res = await fetch('/api/jobs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config_yaml: configText.value, action })
-          });
-          const json = await res.json();
-          if (!json.job_id) throw new Error('No job_id returned');
-          const jobId = json.job_id;
-          status.textContent = `Running (job ${jobId})`;
-
-          // open websocket to stream logs
-          const ws = new WebSocket(`${location.origin.replace('http', 'ws')}/ws/jobs/${jobId}/logs`);
-          ws.onopen = () => {
-            console.log('WS open', jobId);
-          };
-          ws.onmessage = async (ev) => {
-            output.textContent += ev.data;
-            output.scrollTop = output.scrollHeight;
-            if (typeof ev.data === 'string' && ev.data.startsWith('__JOB_DONE__')) {
-              status.textContent = 'Completed';
-              // query artifacts for this job and display download links
-              try {
-                const resp = await fetch(`/api/jobs/${jobId}/artifacts`);
-                const j = await resp.json();
-                if (j.artifacts && j.artifacts.length > 0) {
-                  output.textContent += '\n\nArtifacts:\n';
-                  const artifactsDiv = document.getElementById('artifacts');
-                  artifactsDiv.innerHTML = '';
-                  j.artifacts.forEach((p, i) => {
-                    const link = `${location.origin}/api/jobs/${jobId}/artifact?index=${i}`;
-                    output.textContent += `${i}: ${p} -> ${link}\n`;
-                    const el = document.createElement('div');
-                    el.innerHTML = `Artifact ${i}: <a href="${link}" target="_blank">${p}</a>` + (p.toLowerCase().endsWith('.tsv') ? ` <button class="btn" onclick="loadArtifact('${jobId}', ${i})">Open in editor</button>` : '');
-                    artifactsDiv.appendChild(el);
-                  });
-                }
-              } catch (err) {
-                console.warn('Failed to fetch artifacts', err);
-              }
-
-              ws.close();
-            }
-          };
-          ws.onclose = () => console.log('WS closed');
-          ws.onerror = (e) => console.error('WS error', e);
-
-        } catch (err) {
-          output.textContent = String(err);
-          status.textContent = 'ERROR';
-        }
-      }
-
-      document.getElementById('analyzeBtn').addEventListener('click', () => createJob('analyse'));
-      document.getElementById('runBtn').addEventListener('click', () => createJob('run'));
-      document.getElementById('reportBtn').addEventListener('click', () => createJob('report'));
-
-      // Table editor helpers
-      let currentEditorData = null;
-
-      async function loadArtifact(jobId, index) {
-        try {
-          const resp = await fetch(`/api/jobs/${jobId}/artifact?index=${index}`);
-          if (!resp.ok) throw new Error('Failed to download artifact');
-          const text = await resp.text();
-          openTableEditor(text, `${jobId}-artifact-${index}.tsv`);
-        } catch (err) {
-          alert('Error loading artifact: ' + err.message);
-        }
-      }
-
-      function openTableEditor(tsvText, filename = 'conversion.tsv') {
-        const editor = document.getElementById('tableEditor');
-        const container = document.getElementById('tableContainer');
-        editor.style.display = 'block';
-        // parse TSV
-        const lines = tsvText.trim().split('\n');
-        const headers = lines[0].split('\t');
-        const rows = lines.slice(1).map(line => line.split('\t'));
-        // build table
-        let html = '<table style="width:100%; border-collapse: collapse; font-size:12px;">';
-        html += '<thead><tr>' + headers.map(h => `<th style="border:1px solid #eee; padding:6px; background:#fafafa">${h}</th>`).join('') + '</tr></thead>';
-        html += '<tbody>' + rows.map((r, ri) => `<tr data-row="${ri}">` + r.map((cell, ci) => `<td style="border:1px solid #eee; padding:6px"><input style="width:100%; border:none;" data-row="${ri}" data-col="${ci}" value="${escapeHtml(cell)}"></td>`).join('') + '</tr>`).join('') + '</tbody>';
-        html += '</table>';
-        container.innerHTML = html;
-        currentEditorData = { headers, rows, filename };
-        document.getElementById('downloadTable').onclick = downloadEditedTable;
-        document.getElementById('closeEditor').onclick = () => { document.getElementById('tableEditor').style.display = 'none'; };
-      }
-
-      function escapeHtml(str){ return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-      function downloadEditedTable(){
-        // reconstruct TSV
-        const container = document.getElementById('tableContainer');
-        if (!currentEditorData) return;
-        const inputs = container.querySelectorAll('input[data-row][data-col]');
-        const rows = [];
-        const maxRow = Math.max(...Array.from(inputs).map(i => parseInt(i.dataset.row)));
-        const maxCol = Math.max(...Array.from(inputs).map(i => parseInt(i.dataset.col)));
-        // Build matrix
-        const matrix = Array.from({length: maxRow+1}, () => Array(maxCol+1).fill(''));
-        inputs.forEach(inp => { matrix[parseInt(inp.dataset.row)][parseInt(inp.dataset.col)] = inp.value; });
-        const lines = [currentEditorData.headers.join('\t')].concat(matrix.map(r => r.join('\t')));
-        const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = currentEditorData.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-    </script>
+    <script src="/editor-model.js"></script>
+    <script src="/app-report.js"></script>
+    <script src="/app-config.js"></script>
+    <script src="/app-editor.js"></script>
+    <script src="/app.js"></script>
+    <script src="/app-jobs.js"></script>
   </body>
 </html>

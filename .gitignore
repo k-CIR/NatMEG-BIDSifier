@@ -3,9 +3,12 @@ resources/
 dist/
 tests/
 logs/
+.venv/
 
+bids_config.yml
 *.log
 .DS_Store
+__pycache__/
 
 # Electron build artifacts and bundled runtime — kept in the electron branch, not main
 electron/dist/

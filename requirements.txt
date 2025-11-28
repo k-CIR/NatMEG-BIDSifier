@@ -15,3 +15,7 @@ mne-bids>=0.13.0
 jupyter>=1.0.0
 ipython>=8.0.0
 bids-validator>=1.14.0
+
+# Server / web app dependencies (merged from server/requirements.txt)
+fastapi>=0.95
+uvicorn[standard]>=0.22

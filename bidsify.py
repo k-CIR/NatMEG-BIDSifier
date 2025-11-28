@@ -985,14 +985,21 @@ def load_conversion_table(config: dict):
         - Prints table loading information
     """
     # Load the most recent conversion table
-    path_BIDS = config.get('BIDS', None)
-    logPath = path_BIDS.replace('BIDS', 'logs')
+    # Prefer capitalized keys but accept common alternative keys as fallback
+    path_BIDS = config.get('BIDS') or config.get('bids') or config.get('BIDSPath') or config.get('bids_path') or None
+    logPath = path_BIDS.replace('BIDS', 'logs') if path_BIDS else None
     conversion_file = config.get('Conversion_file', None)
     overwrite = config.get('Overwrite_conversion', False)
     
-    if logPath is None:
-        raise ValueError("Log path not specified in configuration")
-        return
+    if not logPath:
+        # Attempt to infer logs path from project root/name settings
+        project_root = join(config.get('Root', '') or '', config.get('Name', '') or '')
+        if project_root and exists(project_root):
+            logPath = join(project_root, 'logs')
+        else:
+            # As a last resort, use ./logs in CWD and warn
+            logPath = './logs'
+        print(f"[WARN] BIDS path missing; falling back to log path: {logPath}")
     
     conversion_logs_path = logPath
     if not os.path.exists(conversion_logs_path):
@@ -1002,7 +1009,7 @@ def load_conversion_table(config: dict):
     if conversion_file:
         conversion_file = os.path.join(conversion_logs_path, conversion_file)
     
-    if exists(conversion_file) and not overwrite:
+    if conversion_file and exists(conversion_file) and not overwrite:
         # Check if file is not empty before reading
         try:
             if os.path.getsize(conversion_file) > 0:
