@@ -55,7 +55,7 @@ If you run the server on a remote machine and want to access the web UI from you
 Add this to your `~/.bashrc` / `~/.zshrc` (replace `<user>` and `/path/to/script`):
 
 ```bash
-alias cir-bidsify='ssh -f -N -o ExitOnForwardFailure=yes -L 8080:localhost:8080 <user>@compute.kcir.se "cd /path/to/script/NatMEG-BIDSifier && ./scripts/serverctl.sh start; sleep 1; echo Ready: http://localhost:8080"'
+alias cir-bidsify='ssh -f -N -o ExitOnForwardFailure=yes -L 8080:localhost:8080 <user>@<server> "cd /path/to/script/NatMEG-BIDSifier && ./scripts/serverctl.sh start; sleep 1; echo Ready: http://localhost:8080"'
 
 ```
 
@@ -119,6 +119,40 @@ Security notes:
 - Use SSH key authentication so the alias runs unattended without typing a password.
 - Do NOT use these shortcuts on untrusted networks without proper TLS and authentication for the FastAPI server.
 - If you want to make the web UI accessible to other machines, it's better to configure a reverse proxy, TLS and authentication rather than binding the server publicly.
+
+Helper script: scripts/cir-bidsify.sh
+
+For a convenient, interactive helper we include `scripts/cir-bidsify.sh` in the repo. It implements a safe start/stop/status workflow and avoids the typical race conditions when starting the remote server and opening a background tunnel.
+
+Features
+- start: ensures the remote server is started (via `./scripts/serverctl.sh start`), waits for `/api/ping` to respond, then creates a background SSH tunnel (writes `.tunnel.pid` to the repo root).
+- stop: stops the local tunnel (kills PID in `.tunnel.pid`) and optionally stops the remote server.
+- status: reports whether the local tunnel is running and queries remote `serverctl.sh status`.
+
+Usage examples
+
+```bash
+# interactive prompt for target and repo
+./scripts/cir-bidsify.sh
+
+# provide target and repo path
+./scripts/cir-bidsify.sh <user>@<server> /server/path/to/script
+
+# start with autossh (auto-reconnect)
+./scripts/cir-bidsify.sh <user>@<server> /server/path/to/script --autossh
+
+# stop the tunnel and optionally the remote server
+./scripts/cir-bidsify.sh stop <user>@<server> /server/path/to/script
+
+# check status
+./scripts/cir-bidsify.sh status <user>@<server> /server/path/to/script
+```
+
+Recommended alias (safe): use the script or the already documented wait-for-ping one-liner. Example alias that calls the helper script:
+
+```bash
+alias cir-bidsify='$PWD/scripts/cir-bidsify.sh <user>@<server> /server/path/to/script'
+```
 
 
 Primary API endpoints (useful for automation)
