@@ -325,6 +325,9 @@
         } catch(e) { /* ignore */ }
       } catch(e) { /* ignore */ }
 
+      // notify other parts of the UI that a config was loaded/updated so
+      // they can recompute derived fields (e.g., suggested conversion table path)
+      try { if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') window.dispatchEvent(new CustomEvent('AppConfigChanged', { detail: { data } })); } catch(e){}
       // return parsed data for convenience
       return data;
     } catch (e) { alert('Failed to parse YAML: ' + e.message); }

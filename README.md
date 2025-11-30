@@ -12,7 +12,7 @@ A toolkit for converting MEG/EEG data to BIDS (Brain Imaging Data Structure) for
 - Web-based user interface for configuration and monitoring
 - Remote job submission and real-time log streaming
 
-## Installation
+## Installation (on server)
 
 ### Prerequisites
 
@@ -46,12 +46,28 @@ python bidsify.py --config config.yml [--analyse][--run][--report]
 ```
 ### Web application (FastAPI)
 
-This repository also ships a small web application (FastAPI) that provides the same core conversion features as the desktop GUI but runs in a browser. The server is intentionally lightweight and is useful when you want to run conversions from a remote host, on a headless server, or inside a container.
+This repository also have a small web application (FastAPI) that allows user-friendly local configuration and edits to allow remote BIDS batch processing on a server.
+
+### Quick remote access: one-liner alias ("cir-bidsify")
+
+If you run the server on a remote machine and want to access the web UI from your laptop with a single command, you can add a small alias to your shell which will (1) start the server on the remote host and (2) forward the remote port back to your laptop.
+
+Add this to your `~/.bashrc` / `~/.zshrc` (replace `<user>` and `/path/to/script`):
+
+```bash
+alias cir-bidsify='ssh -f -N -o ExitOnForwardFailure=yes -L 8080:localhost:8080 <user>@compute.kcir.se "cd /path/to/script/NatMEG-BIDSifier && ./scripts/serverctl.sh start; sleep 1; echo Ready: http://localhost:8080"'
+
+```
+
+Now open `http://localhost:8080`!
 
 Highlights
 - Minimal FastAPI server located at `server/app.py` that runs `bidsify.py` for you.
 - A small static front-end under `web/` implements a browser UI that speaks to the server via REST + WebSocket for real-time job logs.
 - Web UI can submit jobs (analyse, run, report), stream logs in real-time, and fetch artifacts (e.g. `bids_results.json` or TSV conversion tables) produced by jobs.
+
+
+### The full story
 
 Run the web server locally (recommended minimal steps):
 
@@ -68,6 +84,42 @@ uvicorn server.app:app --host 0.0.0.0 --port 8080
 ```
 
 Open your browser at http://localhost:8080/ — the bundled web UI (in `web/index.html`) provides the same form-driven configuration and job panel that the desktop app used to provide.
+
+
+SSH flags explained (short):
+
+- `-N` — Do not execute a remote command. Useful when you only want port forwarding/tunnelling and no remote shell.
+- `-f` — Fork to background after authentication. Commonly combined with `-N` so ssh can background safely when there is no remote command to execute.
+- `-L local:remote` — Sets up local port forwarding (forward `local` on the client to `remote` on the server). In our alias `-L 8080:localhost:8080` forwards the server's localhost:8080 back to your laptop's localhost:8080.
+- `-o ExitOnForwardFailure=yes` — Makes ssh fail and exit if the requested forwards can't be established; prevents backgrounding into a broken tunnel.
+
+autossh notes:
+
+- `autossh -M 0` disables the monitoring port feature and lets autossh attempt persistent reconnection using other methods. You can also supply `-M <port>` to enable internal port monitoring for better detection of tunnel breakage.
+- the remote command (`./scripts/serverctl.sh start`) ensures the FastAPI server is started on the remote machine (script uses 127.0.0.1:8080 by default).
+
+Examples:
+
+- Start the server and open the UI on your laptop (after adding the alias):
+
+```bash
+cir-bidsify
+# Then open http://localhost:8080 in your browser
+```
+
+If you prefer a more robust tunnel that will auto-restart if it drops, use autossh (install `autossh` first):
+
+```bash
+alias cir-bidsify='ssh user@host "cd /path/to/NatMEG-BIDSifier && ./scripts/serverctl.sh start" && \
+    autossh -f -M 0 -N -o ExitOnForwardFailure=yes -L 8080:localhost:8080 user@host'
+```
+
+Security notes:
+- These aliases forward a *local-only* port (i.e. your laptop's localhost) — nothing is exposed to the public Internet on the remote machine.
+- Use SSH key authentication so the alias runs unattended without typing a password.
+- Do NOT use these shortcuts on untrusted networks without proper TLS and authentication for the FastAPI server.
+- If you want to make the web UI accessible to other machines, it's better to configure a reverse proxy, TLS and authentication rather than binding the server publicly.
+
 
 Primary API endpoints (useful for automation)
 - POST /api/analyze  -> runs bidsify --analyse with the provided config

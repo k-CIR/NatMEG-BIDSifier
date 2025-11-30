@@ -54,7 +54,11 @@
           <div class="subtitle">Edit your config, preview conversion tables and run conversions — lightweight web interface for the server.</div>
         </div>
         <div class="header-actions">
-          <small class="muted">Mode: <strong>Web</strong></small>
+          <!-- Connection badge updates live (see web/app.js) -->
+          <div id="connectionBadge" class="connection-badge disconnected" role="status" aria-live="polite">
+            <span id="connectionDot" class="connection-dot" aria-hidden="true"></span>
+            <small id="connectionText" class="connection-text">Disconnected</small>
+          </div>
         </div>
       </div>
 
@@ -66,7 +70,7 @@
         <div class="file-row" style="display:flex; gap:16px; align-items:flex-start; margin-top:12px; flex-direction:column;">
           <!-- Server section spans both columns -->
           <div class="form-section" style="width:100%; margin-bottom:14px;">
-            <input type="file" id="fileInput" accept=".yml,.yaml" style="display:none" aria-hidden="true" />
+            <!-- <input type="file" id="fileInput" accept=".yml,.yaml" style="display:none" aria-hidden="true" />
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
               <div style="font-weight:700">Server</div>
               <small class="hint">Leave blank for local server</small>
@@ -74,11 +78,11 @@
             <div class="form-group" style="margin-bottom:10px;">
               <label>SSH Server (optional)</label>
               <input id="config_ssh_server" placeholder="user@host (optional)" class="input-wide-compact">
-            </div>
+            </div> -->
             <div class="form-group">
               <label>Server config path</label>
               <div style="display:flex; gap:8px; align-items:center;">
-                <input id="loadConfigPath" placeholder="server path to load" class="input-wide-compact" style="flex:1">
+                <input id="loadConfigPath" placeholder="server path to load config file" class="input-wide-compact" style="flex:1">
                 <button id="loadConfigBtn" class="btn">Load</button>
                 <button id="saveConfigBtn" class="btn primary" disabled>💾 Save</button>
                 <div id="configSaveState" class="muted" style="margin-left:6px">saved</div>

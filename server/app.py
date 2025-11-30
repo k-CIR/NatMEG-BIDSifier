@@ -552,15 +552,45 @@ async def create_job(req: JobRequest):
                 logs_dir = os.path.join(projectRoot, 'logs') if projectRoot else None
                 conv_name = cfg_obj.get('BIDS', {}).get('Conversion_file') if isinstance(cfg_obj.get('BIDS', {}), dict) else None
                 conv_name = conv_name or 'bids_conversion.tsv'
+                # Probe a set of likely locations for conversion tables and results
+                # (project logs, conversion_logs inside project, BIDS path fallbacks)
+                candidates = []
                 if logs_dir:
-                    cpath = os.path.join(logs_dir, conv_name)
-                    results = os.path.join(logs_dir, 'bids_results.json')
-                    found = []
-                    if os.path.exists(cpath):
-                        found.append(cpath)
-                    if os.path.exists(results):
-                        found.append(results)
-                    JOBS[job_id]['artifacts'] = found
+                    candidates.append(os.path.join(logs_dir, conv_name))
+                    candidates.append(os.path.join(logs_dir, 'bids_results.json'))
+                    candidates.append(os.path.join(os.path.dirname(logs_dir), 'conversion_logs', conv_name))
+
+                # also look for a top-level BIDS path in the config (Project.BIDS or top-level BIDS)
+                bids_path = None
+                try:
+                    # support config shapes: Project -> BIDS or top-level BIDS
+                    if isinstance(cfg_obj.get('Project'), dict) and cfg_obj.get('Project').get('BIDS'):
+                        bids_path = cfg_obj.get('Project').get('BIDS')
+                    elif cfg_obj.get('BIDS') and isinstance(cfg_obj.get('BIDS'), str):
+                        bids_path = cfg_obj.get('BIDS')
+                except Exception:
+                    bids_path = None
+
+                if bids_path:
+                    bids_path = os.path.expanduser(str(bids_path))
+                    candidates.append(os.path.join(bids_path, 'logs', conv_name))
+                    candidates.append(os.path.join(bids_path, 'conversion_logs', conv_name))
+                    candidates.append(os.path.join(bids_path, conv_name))
+
+                # As a final fallback probe the repository-level logs folder
+                candidates.append(os.path.join(REPO_ROOT, 'logs', conv_name))
+                candidates.append(os.path.join(REPO_ROOT, 'logs', 'bids_results.json'))
+
+                found = []
+                for p in candidates:
+                    try:
+                        if p and os.path.exists(p) and p not in found:
+                            found.append(p)
+                    except Exception:
+                        # ignore inaccessible paths
+                        pass
+
+                JOBS[job_id]['artifacts'] = found
         finally:
             try:
                 os.unlink(cfg_path)

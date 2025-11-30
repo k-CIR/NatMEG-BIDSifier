@@ -7,6 +7,7 @@ tqdm>=4.64.0
 # MEG/EEG and BIDS conversion
 mne>=1.5.0
 mne-bids>=0.13.0
+pybv >= 0.7.3
 
 # Note: Dependencies like scipy, matplotlib, nibabel, h5py are installed
 # automatically by mne and mne-bids as needed.

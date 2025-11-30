@@ -1189,7 +1189,12 @@ def bidsify(config: dict):
     # Ensure log directory exists and initialize BIDS report if needed
     
     os.makedirs(logPath, exist_ok=True)
-    df, conversion_file = update_conversion_table(config)
+    df, conversion_file = load_conversion_table(config)
+    
+    if df.empty or not conversion_file:
+        print("No files to process in conversion table.")
+        return
+
     df = df.where(pd.notnull(df) & (df != ''), None)
     
     pmap = None

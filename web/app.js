@@ -20,6 +20,48 @@ window.addEventListener('DOMContentLoaded', function() {
   const status = document.getElementById('status');
   const output = document.getElementById('output');
 
+  // connection badge
+  const connectionBadge = document.getElementById('connectionBadge');
+  const connectionDot = document.getElementById('connectionDot');
+  const connectionText = document.getElementById('connectionText');
+
+  function setConnection(connected) {
+    if (!connectionBadge || !connectionDot || !connectionText) return;
+    if (connected) {
+      connectionBadge.classList.remove('disconnected');
+      connectionBadge.classList.add('connected');
+      connectionText.textContent = 'Connected';
+      connectionText.setAttribute('aria-hidden', 'false');
+    } else {
+      connectionBadge.classList.remove('connected');
+      connectionBadge.classList.add('disconnected');
+      connectionText.textContent = 'Disconnected';
+      connectionText.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  // Ping the server to determine connectivity. Use a small timeout so UI remains snappy.
+  async function pingServer(timeoutMs = 1500) {
+    if (!('fetch' in window)) { setConnection(true); return; }
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch('/api/ping', { signal: controller.signal, cache: 'no-cache' });
+      clearTimeout(id);
+      if (!res.ok) { setConnection(false); return false; }
+      const data = await res.json();
+      setConnection(Boolean(data && data.ok));
+      return !!(data && data.ok);
+    } catch (e) {
+      setConnection(false);
+      return false;
+    }
+  }
+
+  // initial check and periodic polling
+  pingServer();
+  setInterval(() => pingServer(), 30_000);
+
   // file input handled by app-config.js
 
   // config operations handled by web/app-config.js

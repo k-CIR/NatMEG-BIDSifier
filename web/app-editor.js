@@ -172,6 +172,9 @@
 
   // state
   let currentEditorData = null;
+  // fullEditorData stores the complete (original) table as parsed from the TSV
+  // currentEditorData contains the subset/ordering shown in the editor UI.
+  let fullEditorData = null;
   let originalEditorData = null;
   const modifiedRows = new Set();
   const manualStatusChanges = new Set();
@@ -274,6 +277,11 @@
       rows = lines.slice(1).map(line => line.split('\t'));
     }
 
+    // Keep a copy of the full parsed table so we can preserve all columns
+    // even when the editor displays only a subset of columns.
+    const fullHeaders = headers.slice();
+    const fullRows = rows.map(r => r.slice());
+
     const lower = headers.map(h => (h||'').toLowerCase());
 
     // Desired editor column order and fallbacks. We prefer existing header names
@@ -357,7 +365,10 @@
       }
     } catch (e) { /* tolerate in tests */ }
 
-    originalEditorData = { headers: JSON.parse(JSON.stringify(headers)), rows: JSON.parse(JSON.stringify(rows)), filename };
+    // Store the full original table for merging on save/download.
+    fullEditorData = { headers: JSON.parse(JSON.stringify(fullHeaders)), rows: JSON.parse(JSON.stringify(fullRows)), filename };
+    // Keep an immutable copy of the original full table for change detection
+    originalEditorData = { headers: JSON.parse(JSON.stringify(fullEditorData.headers)), rows: JSON.parse(JSON.stringify(fullEditorData.rows)), filename };
     modifiedRows.clear(); manualStatusChanges.clear();
     currentEditorData = { headers, rows, filename };
     // Populate filter dropdowns (best-effort)
@@ -392,9 +403,17 @@
     if (document.getElementById('moveUpBtn')) document.getElementById('moveUpBtn').onclick = () => moveSelectedRows(-1);
     if (document.getElementById('moveDownBtn')) document.getElementById('moveDownBtn').onclick = () => moveSelectedRows(1);
     if (document.getElementById('reloadEditorBtn')) document.getElementById('reloadEditorBtn').onclick = () => {
-      if (!originalEditorData) return alert('Nothing to reload');
-      currentEditorData = { headers: JSON.parse(JSON.stringify(originalEditorData.headers)), rows: JSON.parse(JSON.stringify(originalEditorData.rows)), filename: originalEditorData.filename };
-      modifiedRows.clear(); manualStatusChanges.clear(); renderTableFromData();
+      // Reload from the full original table so the editor view is rebuilt
+      // (preserving all columns and re-applying the desired subset view).
+      if (!fullEditorData && !originalEditorData) return alert('Nothing to reload');
+      try {
+        const tsv = (window.EditorModel && typeof window.EditorModel.modelToTsv === 'function') ? window.EditorModel.modelToTsv(fullEditorData || originalEditorData) : [ (fullEditorData || originalEditorData).headers.join('\t') ].concat((fullEditorData || originalEditorData).rows.map(r=>r.join('\t'))).join('\n');
+        openTableEditor(tsv, (fullEditorData || originalEditorData).filename);
+      } catch(e) {
+        // fallback to simple restore
+        currentEditorData = { headers: JSON.parse(JSON.stringify(originalEditorData.headers)), rows: JSON.parse(JSON.stringify(originalEditorData.rows)), filename: originalEditorData.filename };
+        modifiedRows.clear(); manualStatusChanges.clear(); renderTableFromData();
+      }
       if (document.getElementById('saveTableServer')) document.getElementById('saveTableServer').disabled = true; if (document.getElementById('saveTableCanonical')) document.getElementById('saveTableCanonical').disabled = true; if (document.getElementById('downloadTable')) document.getElementById('downloadTable').disabled = true;
     };
   }
@@ -514,13 +533,34 @@
             } catch (e) {}
           }
         }
-        if (originalEditorData && originalEditorData.rows && originalEditorData.rows[r]) {
-          const original = originalEditorData.rows[r][c] || '';
-          if (original !== (val||'')) modifiedRows.add(r); else {
-            const rowNow = currentEditorData.rows[r]; const rowOrig = originalEditorData.rows[r] || []; const rowDifferent = rowNow.some((x, idx) => (String(x||'') !== String(rowOrig[idx]||'')));
-            if (!rowDifferent) modifiedRows.delete(r);
+        // Compare edited value against the original full table value for the
+        // corresponding column (map view column -> full column by header name).
+        try {
+          if (fullEditorData && fullEditorData.headers && fullEditorData.rows && fullEditorData.rows[r]) {
+            const viewHeader = (currentEditorData.headers[c] || '').toLowerCase();
+            let fullIdx = fullEditorData.headers.map(h => (h||'').toLowerCase()).indexOf(viewHeader);
+            let original = '';
+            if (fullIdx >= 0) original = fullEditorData.rows[r][fullIdx] || '';
+            else original = '';
+            if (original !== (val||'')) modifiedRows.add(r);
+            else {
+              // If all view columns match their original full values, mark row unmodified
+              const rowNow = currentEditorData.rows[r] || [];
+              const viewHeaders = currentEditorData.headers || [];
+              let anyDiff = false;
+              for (let vi = 0; vi < viewHeaders.length; vi++) {
+                const vh = (viewHeaders[vi]||'').toLowerCase();
+                const fidx = fullEditorData.headers.map(h => (h||'').toLowerCase()).indexOf(vh);
+                const nowVal = String((rowNow[vi]||'') || '');
+                const origVal = (fidx >= 0 && fullEditorData.rows[r] && fullEditorData.rows[r][fidx] !== undefined) ? String(fullEditorData.rows[r][fidx]||'') : '';
+                if (nowVal !== origVal) { anyDiff = true; break; }
+              }
+              if (!anyDiff) modifiedRows.delete(r);
+            }
+          } else {
+            modifiedRows.add(r);
           }
-        } else modifiedRows.add(r);
+        } catch (e) { modifiedRows.add(r); }
         if ((currentEditorData.headers[c]||'').toLowerCase() === 'status') manualStatusChanges.add(r);
         const hasMods = modifiedRows.size > 0; if (document.getElementById('saveTableServer')) document.getElementById('saveTableServer').disabled = !hasMods; if (document.getElementById('saveTableCanonical')) document.getElementById('saveTableCanonical').disabled = !hasMods; if (document.getElementById('downloadTable')) document.getElementById('downloadTable').disabled = !hasMods;
         const rowEl = container.querySelector(`tr[data-row='${r}']`); if (rowEl) { if (hasMods && modifiedRows.has(r)) rowEl.classList.add('row-modified'); else rowEl.classList.remove('row-modified'); }
@@ -589,10 +629,76 @@
 
   function findReplaceInTable() { if (!currentEditorData) return; const find = document.getElementById('findText')?.value; const repl = document.getElementById('replaceText')?.value; if (!find) return alert('Enter text to find'); if (window.EditorModel && typeof window.EditorModel.findReplace === 'function') { window.EditorModel.findReplace(currentEditorData, find, repl); } else { currentEditorData.rows = currentEditorData.rows.map(r => r.map(cell => cell.split(find).join(repl))); } renderTableFromData(); }
 
-  function downloadEditedTable(){ if (!currentEditorData) return; let tsv = ''; if (window.EditorModel && typeof window.EditorModel.modelToTsv === 'function') tsv = window.EditorModel.modelToTsv(currentEditorData); else { const headers = currentEditorData.headers; const lines = [headers.join('\t')].concat(currentEditorData.rows.map(r => r.join('\t'))); tsv = lines.join('\n'); } const blob = new Blob([tsv], { type: 'text/tab-separated-values' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = currentEditorData.filename || 'conversion.tsv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
+  // Build a merged model containing all original columns with editor edits
+  function buildMergedModel() {
+    if (!currentEditorData) return null;
+    // If we don't have the full original table (legacy), just use the current view
+    if (!fullEditorData) return { headers: JSON.parse(JSON.stringify(currentEditorData.headers)), rows: JSON.parse(JSON.stringify(currentEditorData.rows)) };
+    const fullH = fullEditorData.headers.slice();
+    const fullRows = fullEditorData.rows.map(r => r.slice());
+    const viewH = currentEditorData.headers || [];
+    const viewRows = currentEditorData.rows || [];
+    // Ensure row counts match (expand fullRows if user added rows)
+    if (viewRows.length > fullRows.length) {
+      const delta = viewRows.length - fullRows.length;
+      for (let i=0;i<delta;i++) fullRows.push(Array.from({ length: fullH.length }, () => ''));
+    }
+    // Overlay view data into fullRows, append columns that didn't exist
+    for (let vi = 0; vi < viewH.length; vi++) {
+      const vh = (viewH[vi]||'').toLowerCase();
+      let fi = fullH.map(h => (h||'').toLowerCase()).indexOf(vh);
+      if (fi < 0) {
+        fi = fullH.length; fullH.push(currentEditorData.headers[vi] || viewH[vi]);
+        fullRows.forEach(r => r.push(''));
+      }
+      for (let r = 0; r < viewRows.length; r++) {
+        fullRows[r][fi] = viewRows[r][vi] || '';
+      }
+    }
+    return { headers: fullH, rows: fullRows };
+  }
+
+  function downloadEditedTable(){
+    if (!currentEditorData) return;
+    const merged = buildMergedModel(); if (!merged) return;
+    let tsv = '';
+    if (window.EditorModel && typeof window.EditorModel.modelToTsv === 'function') tsv = window.EditorModel.modelToTsv(merged);
+    else { const headers = merged.headers; const lines = [headers.join('\t')].concat(merged.rows.map(r => r.join('\t'))); tsv = lines.join('\n'); }
+    const blob = new Blob([tsv], { type: 'text/tab-separated-values' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = currentEditorData.filename || 'conversion.tsv'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
 
   // Save to server handler (wired by DOM or other init code)
-  async function saveTableServer(){ if (!currentEditorData) return alert('No table opened'); const path = document.getElementById('saveTablePath')?.value.trim(); if (!path) return alert('Enter a server path to save the table (e.g. /path/to/logs/bids_conversion.tsv)'); let tsv = ''; if (window.EditorModel && typeof window.EditorModel.modelToTsv === 'function') tsv = window.EditorModel.modelToTsv(currentEditorData); else tsv = [currentEditorData.headers.join('\t')].concat(currentEditorData.rows.map(r => r.join('\t'))).join('\n'); try { const res = await fetch('/api/save-file', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path, content: tsv}) }); const j = await res.json(); if (!res.ok) { alert('Save failed: ' + (j.error || JSON.stringify(j))); return; } originalEditorData = { headers: JSON.parse(JSON.stringify(currentEditorData.headers)), rows: JSON.parse(JSON.stringify(currentEditorData.rows)), filename: currentEditorData.filename }; modifiedRows.clear(); manualStatusChanges.clear(); if (document.getElementById('saveTableServer')) document.getElementById('saveTableServer').disabled = true; if (document.getElementById('saveTableCanonical')) document.getElementById('saveTableCanonical').disabled = true; if (document.getElementById('downloadTable')) document.getElementById('downloadTable').disabled = true; alert('Saved to ' + j.path); } catch (err) { alert('Save failed: ' + err.message); } }
+  async function saveTableServer(){
+    if (!currentEditorData) return alert('No table opened');
+    const path = document.getElementById('saveTablePath')?.value.trim();
+    if (!path) return alert('Enter a server path to save the table (e.g. /path/to/logs/bids_conversion.tsv)');
+    const merged = buildMergedModel(); if (!merged) return alert('Failed to build merged table');
+    let tsv = '';
+    if (window.EditorModel && typeof window.EditorModel.modelToTsv === 'function') tsv = window.EditorModel.modelToTsv(merged);
+    else tsv = [merged.headers.join('\t')].concat(merged.rows.map(r => r.join('\t'))).join('\n');
+    try {
+      const res = await fetch('/api/save-file', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path, content: tsv}) });
+      const j = await res.json();
+      if (!res.ok) { alert('Save failed: ' + (j.error || JSON.stringify(j))); return; }
+      // update the stored original/full data to reflect the saved state
+      fullEditorData = { headers: JSON.parse(JSON.stringify(merged.headers)), rows: JSON.parse(JSON.stringify(merged.rows)), filename: currentEditorData.filename };
+      originalEditorData = { headers: JSON.parse(JSON.stringify(fullEditorData.headers)), rows: JSON.parse(JSON.stringify(fullEditorData.rows)), filename: fullEditorData.filename };
+      // Re-open editor from merged content so view columns stay in sync with saved file
+      try {
+        if (window.EditorModel && typeof window.EditorModel.modelToTsv === 'function') {
+          openTableEditor(window.EditorModel.modelToTsv(fullEditorData), currentEditorData.filename);
+        } else {
+          openTableEditor([fullEditorData.headers.join('\t')].concat(fullEditorData.rows.map(r => r.join('\t'))).join('\n'), currentEditorData.filename);
+        }
+      } catch(e) { /* ignore */ }
+      modifiedRows.clear(); manualStatusChanges.clear();
+      if (document.getElementById('saveTableServer')) document.getElementById('saveTableServer').disabled = true;
+      if (document.getElementById('saveTableCanonical')) document.getElementById('saveTableCanonical').disabled = true;
+      if (document.getElementById('downloadTable')) document.getElementById('downloadTable').disabled = true;
+      alert('Saved to ' + j.path);
+    } catch (err) { alert('Save failed: ' + err.message); }
+  }
 
   async function saveTableCanonical(){ const cfg = document.getElementById('configText')?.value || ''; let detected = null; try { const lines = cfg.split('\n'); let inProj = false; let root=''; let name=''; for (let ln of lines) { const t = ln.trim(); if (!inProj && t.startsWith('Project:')) { inProj = true; continue; } if (inProj) { if (/^[A-Za-z0-9_].*:/.test(t)) { break; } const mRoot = t.match(/^Root:\s*(.*)/); if (mRoot) root = mRoot[1].trim(); const mName = t.match(/^Name:\s*(.*)/); if (mName) name = mName[1].trim(); } } if (root && name) detected = (root + '/' + name + '/logs/bids_conversion.tsv'); } catch (e) {}
     if (!detected) {
@@ -621,8 +727,62 @@
     // wire load table file picker and button for the web editor
     const loadTableBtn = document.getElementById('loadTableBtn');
     const loadTableInput = document.getElementById('loadTableInput');
+    // Make the Load button fetch the file indicated by the adjacent `saveTablePath`
+    // input (server-side path) and fall back to the local file picker when empty.
+    const computeAndFillSaveTablePath = () => {
+      try {
+        const root = (document.getElementById('config_root_path')?.value || '').trim();
+        const proj = (document.getElementById('config_project_name')?.value || '').trim();
+        const bids = (document.getElementById('config_bids_path')?.value || '').trim();
+        const conv = (document.getElementById('config_conversion_file')?.value || 'bids_conversion.tsv').trim() || 'bids_conversion.tsv';
+        let candidate = '';
+        if (root && proj) candidate = `${root.replace(/\/+$/,'')}/${proj.replace(/\/+$/,'')}/logs/${conv}`;
+        else if (bids && (bids.includes('/') || bids.startsWith('.') || bids.startsWith('~'))) candidate = `${bids.replace(/\/+$/,'')}/conversion_logs/${conv}`;
+        // Only auto-fill when the input is empty so we don't clobber a user-provided path.
+        const savePathEl = document.getElementById('saveTablePath');
+        if (savePathEl && candidate && !savePathEl.value.trim()) savePathEl.value = candidate;
+      } catch (e) { /* ignore */ }
+    };
+
+    // compute initial suggested path once the page is ready
+    try { computeAndFillSaveTablePath(); } catch(e){}
+
+    // Recompute when an AppConfig module notifies listeners that a config was loaded
+    try { window.addEventListener && window.addEventListener('AppConfigChanged', computeAndFillSaveTablePath); } catch(e){}
+
+    // keep the suggestion up-to-date when the config fields change
+    ['config_root_path','config_project_name','config_bids_path','config_conversion_file'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('input', () => { try { computeAndFillSaveTablePath(); } catch(e){} });
+        el.addEventListener('change', () => { try { computeAndFillSaveTablePath(); } catch(e){} });
+      }
+    });
+
     if (loadTableBtn && loadTableInput) {
-      loadTableBtn.addEventListener('click', () => loadTableInput.click());
+      loadTableBtn.addEventListener('click', async () => {
+        try {
+          const path = (document.getElementById('saveTablePath')?.value || '').trim();
+          if (!path) {
+            // fallback to selecting a local file
+            return loadTableInput.click();
+          }
+
+          // Attempt to read the server-side file via /api/read-file
+          const resp = await fetch('/api/read-file', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path }) });
+          const j = await resp.json().catch(() => ({}));
+          if (!resp.ok) { alert('Load failed: ' + (j.error || JSON.stringify(j))); return; }
+          if (j && typeof j.content === 'string') {
+            try { openTableEditor(j.content, (path.split('/').pop() || 'conversion.tsv')); } catch(e) { /* ignore */ }
+            const te = document.getElementById('tableEditor'); if (te) te.style.display = 'block';
+          } else {
+            alert('File not found or empty: ' + path);
+          }
+        } catch (e) {
+          // if anything goes wrong fall back to the local picker so the user can still load a file
+          try { loadTableInput.click(); } catch(er){}
+        }
+      });
       loadTableInput.addEventListener('change', async (ev) => {
         const f = ev.target.files && ev.target.files[0]; if (!f) return;
         try {
