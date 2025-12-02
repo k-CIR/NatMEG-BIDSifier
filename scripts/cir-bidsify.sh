@@ -7,6 +7,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PIDFILE="$REPO_ROOT/.tunnel.pid"
 PORTFILE="$REPO_ROOT/.tunnel.port"
+REPOFILE="$REPO_ROOT/.tunnel.repo"
 
 LOCAL_PORT=8080
 REMOTE_PORT=18080
@@ -17,12 +18,19 @@ usage(){
   cat <<EOF
 Usage: $0 [user@host] [remote_repo] [--local-port N] [--remote-port N] [--autossh] [--auto-port]
 
+Commands:
+  start   - Start remote server and create tunnel (default)
+  stop    - Stop tunnel (optionally stop remote server)
+  status  - Check tunnel and remote server status
+  list    - List all your running servers on the remote host
+  cleanup - Stop a specific server by port number (use when pidfile is missing)
+
 Simple helper that:
   - runs ./scripts/serverctl.sh start on the remote host
   - waits for the remote /api/ping to respond
   - sets up an SSH tunnel that forwards remote:LOCAL_PORT -> local:LOCAL_PORT
   - writes the tunnel PID to .tunnel.pid in the repo root
-  - when --auto-port is used, picks a free remote port (range 18080-18150) and records it in .tunnel.port
+  - when --auto-port is used (default), picks a free remote port (range 18080-18150) and records it in .tunnel.port
 
 If password-less SSH keys are not available you will be prompted for a password
 and the helper will try to use sshpass automatically (if installed) to avoid
@@ -33,9 +41,9 @@ EOF
 
 if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then usage; fi
 
-# Subcommand? accept start|stop|status as the first argument (defaults to start)
+# Subcommand? accept start|stop|status|list|cleanup as the first argument (defaults to start)
 cmd="start"
-if [[ ${1:-} =~ ^(start|stop|status)$ ]]; then
+if [[ ${1:-} =~ ^(start|stop|status|list|cleanup)$ ]]; then
   cmd="$1"
   shift || true
 fi
@@ -67,7 +75,16 @@ if [[ $REMOTE_PORT_SET -eq 0 ]]; then
 fi
 
 SSH_TARGET=${1:-}
-REMOTE_REPO=${2:-$REPO_ROOT}
+REMOTE_REPO=${2:-}
+
+# Try to restore from previous run if not provided
+if [[ -z "$SSH_TARGET" && -f "$REPOFILE" ]]; then
+  SSH_TARGET=$(head -n1 "$REPOFILE" 2>/dev/null || echo '')
+fi
+
+if [[ -z "$REMOTE_REPO" && -f "$REPOFILE" ]]; then
+  REMOTE_REPO=$(tail -n1 "$REPOFILE" 2>/dev/null || echo '')
+fi
 
 if [[ -z "$SSH_TARGET" ]]; then
   read -rp "Enter remote ssh target (user@host): " SSH_TARGET
@@ -115,6 +132,20 @@ run_ssh_cmd() {
 }
 
 if [[ "$cmd" == "start" ]]; then
+  # Stop any existing tunnel first to avoid accumulating ports
+  if [[ -f "$PIDFILE" ]]; then
+    old_pid=$(cat "$PIDFILE" 2>/dev/null || echo '')
+    if [[ -n "$old_pid" ]] && ps -p "$old_pid" >/dev/null 2>&1; then
+      echo "Stopping existing tunnel (pid=$old_pid) before starting new one..."
+      kill "$old_pid" 2>/dev/null || true
+      sleep 0.3
+    fi
+    rm -f "$PIDFILE"
+  fi
+
+  # Save SSH target and remote repo for later status/stop commands
+  printf "%s\n%s\n" "$SSH_TARGET" "$REMOTE_REPO" > "$REPOFILE"
+
   # Auto-pick a free remote port if requested
   if [[ $AUTO_PORT -eq 1 ]]; then
     echo "Auto-selecting a free remote port (18080-18150)..."
@@ -201,20 +232,24 @@ if [[ "$cmd" == "start" ]]; then
   fi
 
   echo "Starting tunnel: ${TUN_CMD}"
-  # Start tunnel and save PID of the backgrounded ssh/autossh process
-  bash -lc "${TUN_CMD} & echo \$! > \"${PIDFILE}\""
+  # Start tunnel with -f flag (ssh backgrounds itself)
+  ${TUN_CMD}
+  tunnel_exit=$?
+  if [[ $tunnel_exit -ne 0 ]]; then
+    echo "Tunnel process failed to start (exit code: $tunnel_exit). Check SSH connection and credentials."
+    exit 5
+  fi
 
-  sleep 0.3
-  if [[ -f "$PIDFILE" ]]; then
-    pid=$(cat "$PIDFILE")
-    if ps -p "$pid" >/dev/null 2>&1; then
-      echo "Tunnel established (pid=$pid). Open http://localhost:${LOCAL_PORT} in your browser. PID file: ${PIDFILE}"
-      exit 0
-    else
-      echo "Tunnel process failed to start; see ssh output above for errors."; rm -f "$PIDFILE"; exit 5
-    fi
+  # Find the SSH tunnel PID (since -f makes SSH fork, we can't capture $!)
+  sleep 0.5
+  tunnel_pid=$(pgrep -f "ssh.*-L ${LOCAL_PORT}:localhost:${REMOTE_PORT}" | head -1)
+  if [[ -n "$tunnel_pid" ]]; then
+    echo "$tunnel_pid" > "$PIDFILE"
+    echo "Tunnel established (pid=$tunnel_pid). Open http://localhost:${LOCAL_PORT} in your browser. PID file: ${PIDFILE}"
+    exit 0
   else
-    echo "Failed to record tunnel pidfile ($PIDFILE)"; exit 6
+    echo "Tunnel started but couldn't find PID. It may still be running."
+    exit 6
   fi
 fi
 
@@ -257,6 +292,38 @@ if [[ "$cmd" == "stop" ]]; then
   if [[ "$ans" =~ ^[Yy]$ ]]; then
     run_ssh_cmd "cd \"${REMOTE_REPO}\" && ./scripts/serverctl.sh stop --port ${REMOTE_PORT}" || echo "Remote server stop failed"
   fi
+  exit 0
+fi
+
+if [[ "$cmd" == "list" ]]; then
+  echo "-- list your running servers --"
+  if [[ -z "$SSH_TARGET" ]]; then
+    read -rp "Enter remote ssh target (user@host): " SSH_TARGET
+  fi
+  echo "Querying servers on $SSH_TARGET..."
+  run_ssh_cmd "ps aux | grep '[u]vicorn server.app:app' | grep \"\$(whoami)\" || echo 'No servers running'"
+  exit 0
+fi
+
+if [[ "$cmd" == "cleanup" ]]; then
+  echo "-- cleanup server by port --"
+  if [[ -z "$SSH_TARGET" ]]; then
+    read -rp "Enter remote ssh target (user@host): " SSH_TARGET
+  fi
+  if [[ -z "$REMOTE_REPO" ]]; then
+    read -rp "Enter remote repo path: " REMOTE_REPO
+  fi
+  
+  read -rp "Enter port number to stop: " PORT_TO_STOP
+  if [[ ! "$PORT_TO_STOP" =~ ^[0-9]+$ ]]; then
+    echo "Invalid port number"; exit 1
+  fi
+  
+  echo "Finding and stopping server on port $PORT_TO_STOP..."
+  run_ssh_cmd "cd \"${REMOTE_REPO}\" && ./scripts/serverctl.sh stop --port ${PORT_TO_STOP}" || {
+    echo "Failed to stop via serverctl, trying to find process directly..."
+    run_ssh_cmd "pkill -f 'uvicorn.*:${PORT_TO_STOP}' && echo 'Process killed' || echo 'No process found on port ${PORT_TO_STOP}'"
+  }
   exit 0
 fi
 

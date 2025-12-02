@@ -33,38 +33,52 @@ cir-bidsify.sh
 - wait for the remote server to respond to `/api/ping` (sanity/health check)
 - create a local SSH tunnel that forwards remote localhost:REMOTE_PORT to your laptop localhost:LOCAL_PORT
 
+**Multi-user support**: By default, the script automatically selects a free remote port (18080-18150) and a free local port, allowing multiple users to run servers concurrently on shared hosts without conflicts. Connection details are saved locally so you can run `status`, `stop`, `list`, and `cleanup` commands without re-specifying host and path.
+
 Behavior and files
 - Writes the background tunnel PID to `.tunnel.pid` in the repository root on your local machine.
-- By default it uses LOCAL_PORT=8080 and REMOTE_PORT=8080.
+- Saves the auto-selected remote port to `.tunnel.port` for reuse in status/stop commands.
+- Saves SSH target and remote repo path to `.tunnel.repo` for simplified subsequent commands.
+- By default uses auto-port selection (remote: 18080-18150, local: 8080+). Override with `--remote-port` to pick a specific port.
 - The script supports password-less SSH (preferred). If a key is not available and `sshpass` is installed it will prompt once for a password and use `sshpass` to avoid multiple prompts. Otherwise it will fall back to interactive SSH.
+- Cross-platform local port detection works on macOS, Linux, and Windows (Git Bash).
 
 Usage
 ```
-./scripts/cir-bidsify.sh [start|stop|status] [user@host] [remote_repo] [--local-port N] [--remote-port N] [--autossh]
+./scripts/cir-bidsify.sh [start|stop|status|list|cleanup] [user@host] [remote_repo] [--local-port N] [--remote-port N] [--autossh]
 ```
 
-- `start` (default): starts remote server, waits for ping, then creates local tunnel
+Commands:
+- `start` (default): starts remote server with auto-port, waits for ping, creates local tunnel (auto-stops any previous tunnel first)
 - `status`: print local tunnel state and query `serverctl.sh status` on the remote host
 - `stop`: stop local tunnel (kills PID in `.tunnel.pid`) and optionally stop the remote server
+- `list`: list all your running uvicorn servers on the remote host
+- `cleanup`: stop a specific server by port number (useful when pidfile is missing)
 
 Flags and common examples
-- `--local-port N`: port on your laptop to listen on (defaults to 8080)
-- `--remote-port N`: remote server's loopback port (defaults to 8080)
+- `--local-port N`: port on your laptop to listen on (defaults to 8080, auto-picks if busy)
+- `--remote-port N`: remote server's loopback port (disables auto-port, uses specified port)
 - `--autossh`: use `autossh` (recommended for auto-reconnect) instead of a plain `ssh` tunnel. `autossh` must be installed on your laptop.
 
 Examples
 ```
-# Interactive prompt for target and repo
-./scripts/cir-bidsify.sh
+# Start with auto-port (simplest, recommended for multi-user environments)
+./scripts/cir-bidsify.sh andrge@compute.kcir.se /data/users/natmeg/scripts/NatMEG-BIDSifier
 
-# Start a tunnel to a remote host, auto-reconnect using autossh
-./scripts/cir-bidsify.sh start user@server /path/to/NatMEG-BIDSifier --autossh
+# After running start once, you can use simplified commands
+./scripts/cir-bidsify.sh status
+./scripts/cir-bidsify.sh list
+./scripts/cir-bidsify.sh stop
 
-# Check status (reports local tunnel + remote serverctl status)
-./scripts/cir-bidsify.sh status user@server /path/to/NatMEG-BIDSifier
+# Start with specific remote port (disables auto-port)
+./scripts/cir-bidsify.sh andrge@compute.kcir.se /data/users/natmeg/scripts/NatMEG-BIDSifier --remote-port 18090
 
-# Stop the local tunnel and ask if you want to stop the remote server
-./scripts/cir-bidsify.sh stop user@server /path/to/NatMEG-BIDSifier
+# Start with autossh for auto-reconnect
+./scripts/cir-bidsify.sh andrge@compute.kcir.se /data/users/natmeg/scripts/NatMEG-BIDSifier --autossh
+
+# Clean up orphaned server on a specific port
+./scripts/cir-bidsify.sh cleanup
+# (prompts for port number)
 ```
 
 Exit codes
