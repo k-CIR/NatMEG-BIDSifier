@@ -103,17 +103,23 @@ start(){
   echo "server started (pid=$NEWPID), logs -> $LOGFILE"
   
   # Auto-open browser if running locally (cross-platform: macOS, Linux, Windows/Git Bash)
+  # Skip if $DISPLAY is not set (no X server, e.g., SSH session without X11 forwarding)
   if [[ "$HOST" == "127.0.0.1" || "$HOST" == "localhost" ]]; then
-    sleep 1  # give server a moment to start
-    if command -v open >/dev/null 2>&1; then
-      # macOS
-      open "http://localhost:${PORT}"
-    elif command -v xdg-open >/dev/null 2>&1; then
-      # Linux
-      xdg-open "http://localhost:${PORT}" >/dev/null 2>&1
-    elif command -v start >/dev/null 2>&1; then
-      # Windows/Git Bash
-      start "http://localhost:${PORT}"
+    if [[ -z "${DISPLAY:-}" ]]; then
+      echo "No X server found (\$DISPLAY not set); skipping browser auto-open"
+      echo "Access the server manually: curl http://localhost:${PORT}/api/ping"
+    else
+      sleep 1  # give server a moment to start
+      if command -v open >/dev/null 2>&1; then
+        # macOS
+        open "http://localhost:${PORT}"
+      elif command -v xdg-open >/dev/null 2>&1; then
+        # Linux
+        xdg-open "http://localhost:${PORT}" >/dev/null 2>&1
+      elif command -v start >/dev/null 2>&1; then
+        # Windows/Git Bash
+        start "http://localhost:${PORT}"
+      fi
     fi
   fi
 }
