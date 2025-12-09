@@ -34,6 +34,15 @@ app = FastAPI(title="NatMEG-BIDSifier Server")
 # constrained under this directory for safety.
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
+# User home directory for all runtime files (temp configs, job logs, etc.)
+USER_HOME = os.path.expanduser('~')
+USER_RUNTIME_DIR = os.path.join(USER_HOME, '.natmeg')
+os.makedirs(USER_RUNTIME_DIR, exist_ok=True)
+USER_TEMP_DIR = os.path.join(USER_RUNTIME_DIR, 'temp')
+os.makedirs(USER_TEMP_DIR, exist_ok=True)
+USER_JOBS_DIR = os.path.join(USER_RUNTIME_DIR, 'logs', 'jobs')
+os.makedirs(USER_JOBS_DIR, exist_ok=True)
+
 
 class RawConfig(BaseModel):
     config_yaml: Optional[str] = None
@@ -43,7 +52,7 @@ class RawConfig(BaseModel):
 def _write_temp_config(contents: str) -> str:
     # Attempt to parse and normalise YAML contents before writing so temporary
     # configs used by the server follow the expected shapes (e.g., Tasks as list).
-    fd, path = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_')
+    fd, path = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_', dir=USER_TEMP_DIR)
     try:
         # try parsing YAML
         obj = None
@@ -192,7 +201,7 @@ async def api_analyze(config: RawConfig):
             if not safe or not os.path.exists(safe):
                 return JSONResponse({ 'error': 'invalid or missing config_path' }, status_code=400)
             # copy to temp so execution uses a snapshot
-            fd, cfg_tmp = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_')
+            fd, cfg_tmp = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_', dir=USER_TEMP_DIR)
             os.close(fd)
             import shutil
             shutil.copy2(safe, cfg_tmp)
@@ -229,7 +238,7 @@ async def api_run(config: RawConfig):
             safe = _safe_path(config.config_path)
             if not safe or not os.path.exists(safe):
                 return JSONResponse({ 'error': 'invalid or missing config_path' }, status_code=400)
-            fd, cfg_tmp = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_')
+            fd, cfg_tmp = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_', dir=USER_TEMP_DIR)
             os.close(fd)
             import shutil
             shutil.copy2(safe, cfg_tmp)
@@ -262,7 +271,7 @@ async def api_report(config: RawConfig):
             safe = _safe_path(config.config_path)
             if not safe or not os.path.exists(safe):
                 return JSONResponse({ 'error': 'invalid or missing config_path' }, status_code=400)
-            fd, cfg_tmp = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_')
+            fd, cfg_tmp = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_', dir=USER_TEMP_DIR)
             os.close(fd)
             import shutil
             shutil.copy2(safe, cfg_tmp)
@@ -292,29 +301,59 @@ async def ping():
 
 
 def _safe_path(path: str) -> Optional[str]:
-    """Return an absolute path for `path` that is constrained under REPO_ROOT.
-    Returns None if the computed path would escape REPO_ROOT.
+    """Return an absolute path for `path` that is constrained under REPO_ROOT or the current user's home.
+    Returns None if the computed path would escape allowed boundaries or is not accessible.
+    
+    Security model:
+    - Paths under REPO_ROOT are always allowed.
+    - Paths starting with '~' are expanded to the current user's home directory (constrained there).
+    - Other absolute paths are rejected (no arbitrary filesystem access).
+    - All paths must be readable/executable by the current user.
     """
     if not path:
         return None
-    # Support several path types for convenience:
-    #  - Paths starting with '~' are expanded to the requesting user's home (os.path.expanduser) and accepted.
-    #  - Absolute paths starting with '/' are accepted.
-    #  - Otherwise paths are treated as repository-relative and resolved under REPO_ROOT.
-    # NOTE: accepting user home / absolute paths gives broader file access — ensure you run the
-    # server in a trusted environment when doing so.
+    
+    user_home = os.path.expanduser('~')
+    
+    # Paths starting with '~' are expanded to current user's home directory
     if path.startswith('~'):
-        # expand tilde to home directory
         abs_candidate = os.path.abspath(os.path.expanduser(path))
+        # Ensure the resolved path stays within user's home directory
+        try:
+            if os.path.commonpath([user_home, abs_candidate]) != user_home:
+                return None
+        except ValueError:
+            # Paths on different drives (Windows) or other issues
+            return None
+        # Check accessibility
+        if not os.access(abs_candidate, os.R_OK):
+            return None
         return abs_candidate
 
+    # Reject absolute paths (except those under REPO_ROOT, handled below)
+    # This prevents arbitrary filesystem access outside REPO_ROOT and user home
     if os.path.isabs(path):
         abs_candidate = os.path.abspath(path)
+        # Only allow if under REPO_ROOT; otherwise reject for security
+        try:
+            if os.path.commonpath([REPO_ROOT, abs_candidate]) != REPO_ROOT:
+                return None
+        except ValueError:
+            return None
+        # Check accessibility
+        if not os.access(abs_candidate, os.R_OK):
+            return None
         return abs_candidate
 
-    # allow user-specified relative paths under REPO_ROOT
+    # Relative paths are treated as repository-relative under REPO_ROOT
     abs_candidate = os.path.abspath(os.path.join(REPO_ROOT, os.path.normpath(path).lstrip('/')))
-    if os.path.commonpath([REPO_ROOT, abs_candidate]) != REPO_ROOT:
+    try:
+        if os.path.commonpath([REPO_ROOT, abs_candidate]) != REPO_ROOT:
+            return None
+    except ValueError:
+        return None
+    # Check accessibility
+    if not os.access(abs_candidate, os.R_OK):
         return None
     return abs_candidate
 
@@ -451,7 +490,7 @@ async def create_job(req: JobRequest):
         safe = _safe_path(req.config_path)
         if not safe or not os.path.exists(safe):
             return JSONResponse({ 'error': 'invalid or missing config_path' }, status_code=400)
-        fd, cfg_temp_copy = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_')
+        fd, cfg_temp_copy = tempfile.mkstemp(suffix='.yml', prefix='natmeg_config_', dir=USER_TEMP_DIR)
         os.close(fd)
         shutil.copy2(safe, cfg_temp_copy)
         try:
@@ -497,10 +536,10 @@ async def create_job(req: JobRequest):
     # record the resolved command in the job payload for easier debugging
     JOBS[job_id]['cmd'] = cmd
 
-    # Persist a copy of the exact config used to disk under logs/jobs/<job_id>/
+    # Persist a copy of the exact config used to disk under user home logs/jobs/<job_id>/
     # for easy retrieval / traceability
     try:
-        job_cfg_dir = os.path.join(REPO_ROOT, 'logs', 'jobs', job_id)
+        job_cfg_dir = os.path.join(USER_JOBS_DIR, job_id)
         os.makedirs(job_cfg_dir, exist_ok=True)
         persistent_config_path = os.path.join(job_cfg_dir, 'used_config.yml')
         if cfg_path and os.path.exists(cfg_path):
@@ -577,9 +616,10 @@ async def create_job(req: JobRequest):
                     candidates.append(os.path.join(bids_path, 'conversion_logs', conv_name))
                     candidates.append(os.path.join(bids_path, conv_name))
 
-                # As a final fallback probe the repository-level logs folder
-                candidates.append(os.path.join(REPO_ROOT, 'logs', conv_name))
-                candidates.append(os.path.join(REPO_ROOT, 'logs', 'bids_results.json'))
+                # As a final fallback probe the user home logs folder
+                user_logs = os.path.join(USER_HOME, '.natmeg', 'logs')
+                candidates.append(os.path.join(user_logs, conv_name))
+                candidates.append(os.path.join(user_logs, 'bids_results.json'))
 
                 found = []
                 for p in candidates:
