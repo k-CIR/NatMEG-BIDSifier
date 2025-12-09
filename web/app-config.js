@@ -803,36 +803,26 @@
       formInputs.forEach(el => el.addEventListener('input', enableSaveForEdit));
     }
 
-    // --- Automatic path updates: If not manually edited, update Raw Data Path and BIDS Output Path
-    // Track manual edits for Raw Data Path and BIDS Output Path to prevent overwriting them
+    // --- Automatic path updates: If not manually edited, update paths based on Root Path and Project Name
+    // Track manual edits for all auto-fill paths to prevent overwriting them
     let rawPathManuallyEdited = false;
     let bidsPathManuallyEdited = false;
+    let calibrationPathManuallyEdited = false;
+    let crosstalkPathManuallyEdited = false;
 
     const rawPathEl = document.getElementById('config_raw_path');
     const bidsPathEl = document.getElementById('config_bids_path');
+    const calibrationPathEl = document.getElementById('config_calibration_path');
+    const crosstalkPathEl = document.getElementById('config_crosstalk_path');
     const rootPathEl = document.getElementById('config_root_path');
     const projectNameEl = document.getElementById('config_project_name');
 
-    // Mark paths as manually edited when user interacts with them
-    if (rawPathEl) {
-      rawPathEl.addEventListener('input', () => {
-        if (rawPathEl.value.trim()) {
-          rawPathManuallyEdited = true;
-        }
-      });
-    }
-    if (bidsPathEl) {
-      bidsPathEl.addEventListener('input', () => {
-        if (bidsPathEl.value.trim()) {
-          bidsPathManuallyEdited = true;
-        }
-      });
-    }
-
     // Function to update paths automatically
     function updateAutomaticPaths() {
-      const root = rootPathEl ? rootPathEl.value.trim() : '';
-      const projectName = projectNameEl ? projectNameEl.value.trim() : '';
+      if (!rootPathEl || !projectNameEl) return;
+      
+      const root = rootPathEl.value.trim();
+      const projectName = projectNameEl.value.trim();
 
       // Remove trailing slashes for consistent path construction
       const cleanRoot = root.replace(/\/$/, '');
@@ -854,6 +844,54 @@
           bidsPathEl.value = '';
         }
       }
+
+      // Update Calibration Path if not manually edited
+      if (!calibrationPathManuallyEdited && calibrationPathEl) {
+        if (cleanRoot && projectName) {
+          calibrationPathEl.value = cleanRoot + '/' + projectName + '/triux_files/sss/sss_cal.dat';
+        } else {
+          calibrationPathEl.value = '';
+        }
+      }
+
+      // Update Crosstalk Path if not manually edited
+      if (!crosstalkPathManuallyEdited && crosstalkPathEl) {
+        if (cleanRoot && projectName) {
+          crosstalkPathEl.value = cleanRoot + '/' + projectName + '/triux_files/ctc/ct_sparse.fif';
+        } else {
+          crosstalkPathEl.value = '';
+        }
+      }
+    }
+
+    // Mark paths as manually edited when user interacts with them
+    if (rawPathEl) {
+      rawPathEl.addEventListener('input', () => {
+        if (rawPathEl.value.trim()) {
+          rawPathManuallyEdited = true;
+        }
+      });
+    }
+    if (bidsPathEl) {
+      bidsPathEl.addEventListener('input', () => {
+        if (bidsPathEl.value.trim()) {
+          bidsPathManuallyEdited = true;
+        }
+      });
+    }
+    if (calibrationPathEl) {
+      calibrationPathEl.addEventListener('input', () => {
+        if (calibrationPathEl.value.trim()) {
+          calibrationPathManuallyEdited = true;
+        }
+      });
+    }
+    if (crosstalkPathEl) {
+      crosstalkPathEl.addEventListener('input', () => {
+        if (crosstalkPathEl.value.trim()) {
+          crosstalkPathManuallyEdited = true;
+        }
+      });
     }
 
     // Attach listeners to Root Path and Project Name fields
@@ -866,13 +904,25 @@
       projectNameEl.addEventListener('change', updateAutomaticPaths);
     }
 
-    // Reset manual edit flags when config is loaded (so automatic updates work again on fresh load)
-    const originalPopulate = populateFormFromYaml;
-    window.populateFormFromYaml = async function(...args) {
+    // Store original populateFormFromYaml and wrap it to reset manual edit flags and trigger auto-update
+    // This needs to be in window scope so it properly wraps the outer function
+    const _originalPopulateFormFromYaml = window.populateFormFromYaml || populateFormFromYaml;
+    const wrappedPopulate = async function(configSource) {
       rawPathManuallyEdited = false;
       bidsPathManuallyEdited = false;
-      return originalPopulate.apply(this, args);
+      calibrationPathManuallyEdited = false;
+      crosstalkPathManuallyEdited = false;
+      const result = await _originalPopulateFormFromYaml(configSource);
+      // After populating form, trigger automatic path update since direct value assignment
+      // doesn't fire input events
+      try {
+        updateAutomaticPaths();
+      } catch (e) {
+        if (typeof window !== 'undefined' && window.APP_DEBUG) console.debug('[AutoPaths] updateAutomaticPaths after populate failed', e);
+      }
+      return result;
     };
+    window.populateFormFromYaml = wrappedPopulate;
 
     // --- Analyse gating: Only allow running/analyzing when there's a saved server-side
     // config available. This disambiguates local-file edits (uploads) vs server-resident
