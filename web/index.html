@@ -50,7 +50,7 @@
       <div id="activeViewBadge" class="active-view-badge">view: main-config</div>
       <div class="header-bar">
         <div>
-          <h1>NatMEG-BIDSifier — Web UI</h1>
+          <h1>NatMEG-BIDSifier 2 — Web UI</h1>
           <div class="subtitle">Edit your config, preview conversion tables and run conversions — lightweight web interface for the server.</div>
         </div>
         <div class="header-actions">
@@ -121,11 +121,11 @@
                 <div style="display:flex; gap:8px;"><input id="config_root_path" class="input-wide-compact"></div>
               </div>
               <div class="form-group">
-                <label>Raw Data Path</label>
+                <label>Raw Data Path <small style="color: var(--muted); font-weight:400">(auto-filled: Root + Project + '/raw')</small></label>
                 <div style="display:flex; gap:8px;"><input id="config_raw_path" class="input-wide-compact"></div>
               </div>
               <div class="form-group">
-                <label>BIDS Output Path</label>
+                <label>BIDS Output Path <small style="color: var(--muted); font-weight:400">(auto-filled: Root + Project + '/BIDS')</small></label>
                 <div style="display:flex; gap:8px;"><input id="config_bids_path" class="input-wide-compact"></div>
               </div>
 
@@ -172,7 +172,6 @@
               <div style="flex:1 1 260px; display:flex; gap:8px; align-items:center;">
                 <div style="flex:1">
                   <h4>BIDS dataset metadata</h4>
-                  <small class="hint">Information used in dataset_description and metadata fields.</small>
                 </div>
                 <div style="display:flex; gap:8px; align-items:center;">
                   <input id="config_dataset_description_file" class="input-wide-compact" value="dataset_description.json" style="width:260px">
@@ -180,6 +179,7 @@
                 </div>
               </div>
             </div>
+            <small class="hint">Information in <code>dataset_description.json</code> and other metadata fields. (In BIDS folder)</small>
 
             <div style="display:flex; gap:8px; align-items:center;">
               <div class="form-group">
