@@ -301,12 +301,14 @@ async def ping():
 
 
 def _safe_path(path: str) -> Optional[str]:
-    """Return an absolute path for `path` that is constrained under REPO_ROOT or the current user's home.
+    """Return an absolute path for `path` that is constrained under REPO_ROOT, the current user's home,
+    or /data/users/<username>.
     Returns None if the computed path would escape allowed boundaries or is not accessible.
     
     Security model:
     - Paths under REPO_ROOT are always allowed.
     - Paths starting with '~' are expanded to the current user's home directory (constrained there).
+    - Paths under /data/users/<username> are allowed (confined to that user's data directory).
     - Other absolute paths are rejected (no arbitrary filesystem access).
     - All paths must be readable/executable by the current user.
     """
@@ -314,6 +316,7 @@ def _safe_path(path: str) -> Optional[str]:
         return None
     
     user_home = os.path.expanduser('~')
+    current_user = os.path.expanduser('~').split('/')[-1]
     
     # Paths starting with '~' are expanded to current user's home directory
     if path.startswith('~'):
@@ -330,20 +333,34 @@ def _safe_path(path: str) -> Optional[str]:
             return None
         return abs_candidate
 
-    # Reject absolute paths (except those under REPO_ROOT, handled below)
-    # This prevents arbitrary filesystem access outside REPO_ROOT and user home
+    # Reject absolute paths (except those under REPO_ROOT or /data/users/<user>, handled below)
+    # This prevents arbitrary filesystem access outside allowed locations
     if os.path.isabs(path):
         abs_candidate = os.path.abspath(path)
-        # Only allow if under REPO_ROOT; otherwise reject for security
+        
+        # Check if under REPO_ROOT
         try:
-            if os.path.commonpath([REPO_ROOT, abs_candidate]) != REPO_ROOT:
-                return None
+            if os.path.commonpath([REPO_ROOT, abs_candidate]) == REPO_ROOT:
+                # Check accessibility
+                if not os.access(abs_candidate, os.R_OK):
+                    return None
+                return abs_candidate
         except ValueError:
-            return None
-        # Check accessibility
-        if not os.access(abs_candidate, os.R_OK):
-            return None
-        return abs_candidate
+            pass
+        
+        # Check if under /data/users/<current_user>
+        user_data_dir = f'/data/users/{current_user}'
+        try:
+            if os.path.commonpath([user_data_dir, abs_candidate]) == user_data_dir:
+                # Check accessibility
+                if not os.access(abs_candidate, os.R_OK):
+                    return None
+                return abs_candidate
+        except ValueError:
+            pass
+        
+        # Not in any allowed location
+        return None
 
     # Relative paths are treated as repository-relative under REPO_ROOT
     abs_candidate = os.path.abspath(os.path.join(REPO_ROOT, os.path.normpath(path).lstrip('/')))

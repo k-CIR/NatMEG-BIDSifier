@@ -755,7 +755,7 @@ def bids_path_from_rawname(file_name, date_session, config, pmap=None):
         print(f"Missing required fields in {file_name}")
         return None
     
-    acquisition = basename(os.path.dirname(file_name))
+    acquisition = basename(dirname(file_name))
     
     # Check if preprocessed and add derivatives path if so
     proc = '+'.join(info_dict.get('processing', []))
