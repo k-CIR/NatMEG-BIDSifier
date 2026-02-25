@@ -4,24 +4,32 @@ A user-friendly interface for managing NatMEG data processing. Choose to run **l
 
 ## 30-Second Quick Start
 
-```bash
-# 1. Clone and setup
-git clone <this-repo-url>
-cd NatMEG-BIDSifier
-make setup
+1. `git clone <this-repo-url>`
+2. `cd NatMEG-BIDSifier`
+-----------------------------------
 
-# 2. Choose your mode during setup:
-#    - Local: Run app directly on your machine (no SSH required)
-#    - Remote: Connect to remote server via SSH tunnel
+### On mac/linux
+`make setup` - to setup repo
 
-# 3. Launch - one command for both modes:
-make ui              # Interactive menu (auto-detects your mode)
-```
+Choose your mode during setup:
+- Local: Run app directly on your machine (no SSH required)
+- Remote: Connect to remote server via SSH tunnel
 
-**Local mode will:**
-- Automatically install Python dependencies on first run
-- Start the NatMEG application on http://localhost:8080
-- Manage the app process (start/stop/status)
+`make ui` - to launch interactive menu (auto-detects your mode)
+
+-----------------------------------
+### On windows (normal computer)
+
+Use Windows PowerShell or [Git Bash](https://git-scm.com/downloads) and run:
+
+`./setup.sh` - to setup repo
+
+Choose your mode during setup:
+- Local: Run app directly on your machine (no SSH required)
+- Remote: Connect to remote server via SSH tunnel
+
+`./localctl-ui.sh` to launch interactive menu (auto-detects your mode)
+
 
 ## Use the application
 
@@ -31,7 +39,6 @@ make ui              # Interactive menu (auto-detects your mode)
 2. **Analyse / Editor**: Check and edit mis-spelled task names, modify runs etc. and save to a conversion table
 3. **Execute**: Process the conversion table
 4. **View the results**
-
 
 ## Common CL Tasks
 
